@@ -1,11 +1,18 @@
-// main.js — boot, loop, state, on-foot movement, screens and shot staging.
-// Chunk B's player.js takes over the driving block marked below; chunk C
-// owns police, chunk B owns missions. HUD depth lives in hud.js (chunk C).
+// main.js — boot, loop, state, screens and shot staging.
+// Chunk B owns player + vehicles + traffic + missions; chunk C owns
+// police, combat, hud, audio and saves. HUD depth lives in hud.js (chunk C).
 import * as THREE from 'three';
-import { CARS, MISSIONS, WORLD, PLAYER, WEAPONS } from './config.js';
-import { buildCity, isOnRoad, resolveCollision } from './city.js';
+import { CARS, MISSIONS, WORLD, WEAPONS, ECONOMY } from './config.js';
+import { buildCity } from './city.js';
 import { createInput } from './input.js';
 import { createWorld } from './render.js';
+import { createPlayer, updatePlayer } from './player.js';
+import { updateVehicle } from './vehicles.js';
+import { createTraffic, updateTraffic } from './traffic.js';
+import {
+  createMissions, startMission, updateMissions, updateDraft, pickDraft,
+  objectiveText,
+} from './missions.js';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -33,6 +40,27 @@ export function makeState() {
     feats: [],
     muted: false,
     runActive: false,
+    // Chunk B run state.
+    nitro: 1,
+    missionPhase: 'drive',
+    missionTimer: 0,
+    missionChoice: null,
+    raceClock: 0,
+    raceCp: 0,
+    raceCheckpoints: [],
+    branchMarkers: [],
+    event: null,
+    eventClock: 0,
+    eventAt: 40,
+    boss: null,
+    shotsAt: 0,
+    earned: 0,
+    maxHeat: 0,
+    bestChain: 1,
+    nearMisses: 0,
+    draftOptions: [],
+    convoy: null,
+    shadowTimer: 0,
   };
 }
 
@@ -40,6 +68,9 @@ const state = makeState();
 const city = buildCity(1337);
 const input = createInput();
 let world = null;
+let playerSys = null;
+let trafficSys = null;
+let missionsSys = null;
 
 export function setScreen(name) {
   state.screen = name;
@@ -78,14 +109,34 @@ export function stageShot(name) {
   syncHud();
 }
 
+function showVictory(s) {
+  const grade = s.earned >= ECONOMY.gradeS ? 'S'
+    : s.earned >= 60000 ? 'A' : s.earned >= 40000 ? 'B' : 'C';
+  const owned = s.cars.filter((c) => c.owner === 'player').length;
+  const vals = [
+    '$' + s.earned.toLocaleString('en-US'), '10 / 10', '★' + s.maxHeat,
+    'x' + s.bestChain.toFixed(1), String(s.nearMisses), String(s.perks.length),
+    String(owned), 'GRADE ' + grade,
+  ];
+  document.querySelectorAll('.stat-grid div b').forEach((el, i) => {
+    if (vals[i] !== undefined) el.textContent = vals[i];
+  });
+  const p = document.querySelector('[data-screen="victory"] p');
+  if (p) p.textContent = 'Grade ' + grade + '. The Broker pays. Solmar is yours tonight, Milo.';
+  setScreen('victory');
+}
+
 function syncHud() {
   const set = (id, text) => { const el = $(id); if (el) el.textContent = text; };
   set('#hud-cash', '$' + state.cash.toLocaleString('en-US'));
   set('#hud-rep', 'REP ' + state.rep);
   set('#hud-chain', 'CHAIN x' + state.chain.toFixed(1));
   set('#hud-stars', '★'.repeat(Math.round(state.heat)) + '☆'.repeat(5 - Math.round(state.heat)));
-  const m = MISSIONS[state.mission];
-  set('#hud-objective', m ? m.name + ' — ' + m.text : 'FREE ROAM — SOLMAR');
+  if (state.runActive) set('#hud-objective', objectiveText(state));
+  else {
+    const m = MISSIONS[state.mission];
+    set('#hud-objective', m ? m.name + ' — ' + m.text : 'FREE ROAM — SOLMAR');
+  }
   set('#hud-speed', Math.round(Math.abs(state.player.speed) * 3.6) + ' km/h');
   set('#weapon-value', WEAPONS.pistol.name + ' · ∞ RDS [Q] [F]');
   set('#radio-value', 'RADIO OFF');
@@ -100,28 +151,19 @@ function toast(msg) {
   toastTimer = 3;
 }
 
+const fx = { toast, setScreen, showVictory };
+
 function step(dt) {
   state.time += dt;
-  const axis = input.axis();
-  const pl = state.player;
-  if (state.screen === 'play' && pl.onFoot) {
-    // Chunk B's player.js takes this block over (driving + hotwire).
-    const speed = input.held('nitro') ? PLAYER.sprintSpeed : PLAYER.walkSpeed;
-    if (axis.x || axis.y) {
-      const target = Math.atan2(axis.x, -axis.y);
-      let d = target - pl.heading;
-      while (d > Math.PI) d -= Math.PI * 2;
-      while (d < -Math.PI) d += Math.PI * 2;
-      pl.heading += d * Math.min(1, dt * 10);
-      pl.x += Math.sin(pl.heading) * speed * dt;
-      pl.z += Math.cos(pl.heading) * speed * dt;
-      pl.speed = speed;
-    } else {
-      pl.speed = 0;
-    }
-    const fixed = resolveCollision(city, pl.x, pl.z, PLAYER.radius);
-    pl.x = fixed.x; pl.z = fixed.z;
+  if (state.screen === 'play' && state.runActive) {
+    updatePlayer(playerSys, state, input, city, dt, fx);
+    if (!state.player.onFoot) updateVehicle(state, input, city, dt, fx);
+    updateTraffic(trafficSys, state, dt);
+    updateMissions(missionsSys, state, dt, fx);
+    state.maxHeat = Math.max(state.maxHeat, state.heat);
+    state.bestChain = Math.max(state.bestChain, state.chain);
   }
+  if (state.screen === 'draft' && missionsSys) updateDraft(missionsSys, state, input, fx);
   if (input.tapped('pause')) {
     if (state.screen === 'play') setScreen('pause');
     else if (state.screen === 'pause') setScreen('play');
@@ -135,12 +177,14 @@ function step(dt) {
 }
 
 function startRun() {
+  Object.assign(state, makeState());
   state.runActive = true;
-  state.cash = 0; state.rep = 0; state.heat = 0; state.chain = 1;
-  state.mission = 0; state.done = []; state.perks = [];
   state.player = { x: -140, z: -60, heading: 0, speed: 0, onFoot: true, vehicleId: null };
+  playerSys = createPlayer();
+  trafficSys = createTraffic(city);
+  missionsSys = createMissions(city);
   setScreen('play');
-  toast('JOB 1 — THE MARINA JOB');
+  startMission(state, 0, fx);
   syncHud();
 }
 
@@ -167,7 +211,7 @@ function boot() {
   if (shot) stageShot(shot);
   else setScreen('title');
   syncHud();
-  window.__solmar = { state, city };
+  window.__solmar = { state, city, input };
   window.__world = world;
   let frames = 0;
   const ready = () => {
@@ -178,10 +222,15 @@ function boot() {
   requestAnimationFrame(ready);
   window.addEventListener('resize', () => world.resize(window.innerWidth, window.innerHeight));
   $('#btn-start')?.addEventListener('click', startRun);
+  $('#btn-again')?.addEventListener('click', startRun);
   $('#btn-resume')?.addEventListener('click', () => setScreen('play'));
   $('#btn-title')?.addEventListener('click', () => setScreen('title'));
   document.querySelectorAll('[data-goto]').forEach((b) =>
     b.addEventListener('click', () => setScreen(b.dataset.goto)));
+  document.querySelectorAll('.perk-card').forEach((el, i) =>
+    el.addEventListener('click', () => {
+      if (state.screen === 'draft' && missionsSys) pickDraft(missionsSys, state, i, fx);
+    }));
   requestAnimationFrame((t) => { frame.last = t; requestAnimationFrame(frame); });
 }
 

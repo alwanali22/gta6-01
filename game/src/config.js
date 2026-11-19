@@ -122,3 +122,18 @@ export const CAMERA = {
   chaseHeight: 5.5,
   orbitHeight: 60,
 };
+
+// Chunk B numbers: hotwire, race, branch, heist, random events.
+export const HOTWIRE = { secs: 2.5, aceFactor: 0.5, stealHeat: 1 };
+export const RACE = { limit: 100, rivalSpeeds: [21, 19.5] };
+export const BRANCH = { silentHeatMax: 1, loudHeat: 3 };
+export const HEIST = { vaultHold: 5 };
+export const EVENTS = {
+  firstAt: 40, every: 50,
+  kinds: [
+    { id: 'atm', name: 'ATM JOB', reward: 400, heat: 1, ttl: 30 },
+    { id: 'stall', name: 'STALLED DRIVER', reward: 300, heat: 0, ttl: 30 },
+    { id: 'witness', name: 'WITNESS', reward: 250, heat: 1, ttl: 20 },
+    { id: 'jam', name: 'ROADBLOCK JAM', reward: 150, heat: 0, ttl: 25 },
+  ],
+};

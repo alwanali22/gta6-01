@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { WORLD, DISTRICTS, CAMERA } from './config.js';
 import { hash2 } from './random.js';
+import { pedOffset } from './pedestrians.js';
 
 const SUNSET = {
   sky: 0x2b1a4e, fog: 0x3a2350, sun: 0xff8c3a, ambient: 0x8a5a9a,
@@ -214,6 +215,13 @@ export function createWorld(canvas, city) {
   figure.position.y = 1.6;
   scene.add(figure);
 
+  // Traffic: pooled instanced boxes, one per ambient car + race rival.
+  const trafficGeo = new THREE.BoxGeometry(4.2, 1.2, 2);
+  const trafficMesh = new THREE.InstancedMesh(
+    trafficGeo, new THREE.MeshLambertMaterial({ color: 0xffffff }), 16);
+  trafficMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  scene.add(trafficMesh);
+
   // Police helicopter: built now, hidden until chunk C dispatches it.
   const heli = new THREE.Group();
   const heliBody = new THREE.Mesh(
@@ -266,7 +274,8 @@ export function createWorld(canvas, city) {
     setMode(next) { mode = next; shotCam = null; },
     setShotCam(pos, look) { mode = 'shot'; shotCam = { pos, look }; },
     update(state, dt, time) {
-      // Pedestrians wander the sidewalks on fixed loops.
+      // Pedestrians wander the sidewalks on fixed loops; they flee the
+      // player when the heat is on (chunk B pedOffset).
       for (let i = 0; i < 48; i++) {
         const lane = -360 + (i % 12) * 66;
         const speed = 2 + hash2(i, 3) * 2;
@@ -274,12 +283,26 @@ export function createWorld(canvas, city) {
         const side = i % 2 === 0 ? 1 : -1;
         const px = i < 24 ? lane : along;
         const pz = i < 24 ? along : lane;
-        p.set(px, 1.6, pz + side * 9);
+        const off = pedOffset(state, px, pz + side * 9, time);
+        p.set(px + off.x, 1.6, pz + side * 9 + off.z);
         s.set(1, 1, 1);
         m.compose(p, q, s);
         peds.setMatrixAt(i, m);
       }
       peds.instanceMatrix.needsUpdate = true;
+
+      // Traffic: ambient cars + race rivals, coloured per entry.
+      const tLen = Math.min(16, (state.traffic || []).length);
+      for (let i = 0; i < tLen; i++) {
+        const t = state.traffic[i];
+        p.set(t.x, 0.7, t.z); s.set(1, 1, 1);
+        m.compose(p, q, s);
+        trafficMesh.setMatrixAt(i, m);
+        trafficMesh.setColorAt(i, col.setHex(t.color || 0x888888));
+      }
+      trafficMesh.count = tLen;
+      trafficMesh.instanceMatrix.needsUpdate = true;
+      if (trafficMesh.instanceColor) trafficMesh.instanceColor.needsUpdate = true;
 
       // Cars: place pooled meshes on the state.
       state.cars.forEach((car, i) => {
@@ -352,6 +375,29 @@ export function createWorld(canvas, city) {
         ctx.beginPath();
         ctx.arc(sx(state.target.x), sz(state.target.z), 4, 0, Math.PI * 2);
         ctx.fill();
+      }
+      // Race checkpoints (cyan, next one filled), branch choices
+      // (orange), live random event (purple).
+      if (state.raceCheckpoints && state.raceCheckpoints.length) {
+        for (let i = 0; i < state.raceCheckpoints.length; i++) {
+          const c = state.raceCheckpoints[i];
+          ctx.strokeStyle = '#4ae8ff'; ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.arc(sx(c.x), sz(c.z), 5, 0, Math.PI * 2); ctx.stroke();
+          if (i === state.raceCp) {
+            ctx.fillStyle = '#4ae8ff';
+            ctx.beginPath(); ctx.arc(sx(c.x), sz(c.z), 3, 0, Math.PI * 2); ctx.fill();
+          }
+        }
+      }
+      if (state.branchMarkers && state.branchMarkers.length) {
+        for (const b of state.branchMarkers) {
+          ctx.fillStyle = '#ff8c3a';
+          ctx.beginPath(); ctx.arc(sx(b.x), sz(b.z), 4, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+      if (state.event) {
+        ctx.fillStyle = '#c04aff';
+        ctx.beginPath(); ctx.arc(sx(state.event.x), sz(state.event.z), 4, 0, Math.PI * 2); ctx.fill();
       }
       // Cars + player.
       for (const car of state.cars) {
