@@ -106,11 +106,20 @@ planning number stays **~1 slot left** (reputation cap ~3, 2 used).
 
 ## 5. Push verification
 
-_This section is completed in the E3 amendment to this file, after the final
-commit is pushed and verified (ls-remote + fresh clone + ls-tree +
-archive sha256). At E2 write time: remote HEAD is `1546523` (old bb24f0f-era
-history, unrelated to rewrite2) — the push requires `--force` on the first
-push; later commits fast-forward._
+- **Pushed `82dc00a` (E2) to `alwanali22/gta6-01`, branch `main`.** Remote HEAD
+  was `1546523` (old bb24f0f-era history, unrelated to rewrite2), so the
+  first push used `--force` (`master:main`); a stray `master` branch created
+  by the first push attempt was deleted afterwards — remote now has only
+  `main`.
+- **Verified:** `git ls-remote` HEAD = `82dc00a0a76b9e098949b596808340414f159a65`
+  = local HEAD. Fresh clone HEAD = `82dc00a`. `git ls-tree -r HEAD` sha256
+  identical both sides: `81a350d4dee691c845c3d8b7ae0f00a92efa27181bb59524b770406911fc2ac2`.
+  `git archive HEAD` sha256 identical both sides:
+  `073100e545d30cfe9329c4b59748bf5f7914d07fac999bab4baa7b38b339fdad`. Clone
+  contains all files incl. `.makefun/freshness.json` + `.makefun/owner.json`.
+- **E3 (this amendment) changes only this file.** After pushing E3, remote
+  HEAD must equal E3's sha — the main agent verifies that before submitting
+  (submit requires the commit pushed).
 
 ## 6. COMPARE-FIRST — fresh board 21:39 WIB 19 Nov (honest, adversarial)
 
