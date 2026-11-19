@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SOLMAR: SUNSET GETAWAY</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #14101f;
+    font-family: 'Segoe UI', system-ui, sans-serif; color: #fff; }
+  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  .hidden { display: none !important; }
+  #hud { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
+  .hud-box { position: absolute; background: rgba(10, 8, 20, 0.72); border: 1px solid rgba(255, 210, 74, 0.35);
+    border-radius: 8px; padding: 8px 12px; font-size: 14px; line-height: 1.5; }
+  #hud-top-left { top: 12px; left: 12px; }
+  #hud-top-right { top: 12px; right: 12px; text-align: right; }
+  #hud-bottom-left { bottom: 12px; left: 12px; }
+  #hud-bottom-right { bottom: 12px; right: 12px; text-align: right; }
+  #hud-stars { color: #ffd24a; font-size: 20px; letter-spacing: 2px; }
+  #hud-objective { top: 12px; left: 50%; transform: translateX(-50%); background: rgba(10, 8, 20, 0.72);
+    border: 1px solid rgba(255, 74, 74, 0.5); border-radius: 8px; padding: 8px 16px; font-weight: 700;
+    letter-spacing: 1px; position: absolute; }
+  #minimap { border: 1px solid rgba(255, 210, 74, 0.5); border-radius: 4px; display: block; }
+  #toast { position: absolute; bottom: 110px; left: 50%; transform: translateX(-50%);
+    background: rgba(10, 8, 20, 0.85); border: 1px solid #ffd24a; border-radius: 8px;
+    padding: 10px 22px; font-weight: 700; letter-spacing: 1px; }
+  .screen { position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center;
+    background: linear-gradient(180deg, rgba(20, 10, 40, 0.55), rgba(10, 8, 20, 0.88)); padding: 24px; }
+  .screen h1 { font-size: 56px; letter-spacing: 4px; color: #ffd24a; text-shadow: 0 3px 0 #7a2a4a, 0 6px 24px rgba(0,0,0,0.8); }
+  .screen h2 { font-size: 34px; letter-spacing: 3px; color: #ffd24a; margin-bottom: 12px; }
+  .screen .tag { font-size: 18px; letter-spacing: 3px; color: #ff8c3a; margin: 8px 0 20px; }
+  .screen p { max-width: 640px; font-size: 16px; line-height: 1.6; color: #e8e0f0; margin-bottom: 10px; }
+  .screen .counts { font-size: 15px; letter-spacing: 1px; color: #9ad4ff; margin: 14px 0; }
+  .btn { pointer-events: auto; cursor: pointer; background: #ffd24a; color: #14101f; border: none;
+    border-radius: 8px; padding: 14px 34px; font-size: 18px; font-weight: 800; letter-spacing: 2px; margin: 6px; }
+  .btn:hover { background: #ffe08a; }
+  .btn.ghost { background: transparent; color: #ffd24a; border: 2px solid #ffd24a; }
+  .perk-row { display: flex; gap: 12px; margin: 16px 0; flex-wrap: wrap; justify-content: center; }
+  .perk-card { width: 190px; background: rgba(255, 210, 74, 0.08); border: 1px solid #ffd24a;
+    border-radius: 10px; padding: 14px; cursor: pointer; pointer-events: auto; }
+  .perk-card:hover { background: rgba(255, 210, 74, 0.2); }
+  .perk-card h3 { font-size: 16px; color: #ffd24a; margin-bottom: 6px; }
+  .perk-card p { font-size: 13px; color: #e8e0f0; }
+  #save-slots, #garage-cars { width: 100%; max-width: 560px; text-align: left; margin: 10px 0; }
+  .slot-row, .car-row { display: flex; justify-content: space-between; align-items: center;
+    background: rgba(255,255,255,0.06); border-radius: 6px; padding: 10px 14px; margin: 6px 0; font-size: 15px; }
+  .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 16px 0; }
+  .stat-grid div { background: rgba(255,255,255,0.06); border-radius: 8px; padding: 12px; }
+  .stat-grid b { display: block; font-size: 22px; color: #ffd24a; }
+  .stat-grid span { font-size: 12px; letter-spacing: 1px; color: #c8bfe0; }
+  kbd { background: #2a2340; border: 1px solid #555; border-radius: 4px; padding: 1px 6px; font-size: 13px; }
+</style>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.min.js" } }
+</script>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="hud" class="hidden">
+  <div id="hud-top-left" class="hud-box">
+    <div id="hud-stars">☆☆☆☆☆</div>
+    <div id="hud-cash">$0</div>
+    <div id="hud-rep">REP 0</div>
+    <div id="hud-chain">CHAIN x1.0</div>
+  </div>
+  <div id="hud-objective">FREE ROAM — SOLMAR</div>
+  <div id="hud-top-right" class="hud-box">
+    <div id="weapon-value">PISTOL · ∞ RDS [Q] [F]</div>
+    <div id="radio-value">RADIO OFF</div>
+  </div>
+  <div id="hud-bottom-left" class="hud-box"><canvas id="minimap" width="180" height="144"></canvas></div>
+  <div id="hud-bottom-right" class="hud-box"><div id="hud-speed">0 km/h</div><div>SOLMAR · SUNSET</div></div>
+  <div id="toast" class="hidden"></div>
+</div>
+
+<div class="screen" data-screen="title">
+  <h1>SOLMAR</h1>
+  <div class="tag">SUNSET GETAWAY — STEAL THE CAR. OUTRUN THE LAW. OWN THE NIGHT.</div>
+  <p><b>GOAL:</b> Milo Vane is back for one last chain of jobs. Steal, drive, escape — finish all 10 missions and take the Broker's price.</p>
+  <p><b>WIN:</b> complete THE LONG WAY HOME. <b>LOSE:</b> busted by Captain Rook, or wrecked with no car left.</p>
+  <p><b>HOW TO PLAY:</b> <kbd>W A S D</kbd> move &amp; drive · <kbd>E</kbd> steal a car · <kbd>Shift</kbd> nitro · <kbd>Space</kbd> handbrake · <kbd>F</kbd> fire · <kbd>Q</kbd> weapon · <kbd>R</kbd> radio · <kbd>B</kbd> garage · <kbd>P</kbd> pause</p>
+  <div class="counts">4 DISTRICTS · 10 MISSIONS · 6 CARS · 12 PERKS · 3 RADIO STATIONS</div>
+  <div id="save-slots"></div>
+  <button class="btn" id="btn-start">START THE RUN</button>
+</div>
+
+<div class="screen hidden" data-screen="pause">
+  <h2>PAUSED</h2>
+  <p>The sun waits for no one, Milo.</p>
+  <button class="btn" id="btn-resume">RESUME</button>
+  <button class="btn ghost" id="btn-title">QUIT TO TITLE</button>
+</div>
+
+<div class="screen hidden" data-screen="garage">
+  <h2>MARINA GARAGE</h2>
+  <p>Your rides, your guns, your upgrades. Chop shop pays 40%.</p>
+  <div id="garage-cars"></div>
+  <button class="btn ghost" data-goto="play">BACK TO THE STREET</button>
+</div>
+
+<div class="screen hidden" data-screen="draft">
+  <h2>CHOOSE A CREW PERK — PICK 1 OF 3</h2>
+  <p>Job done. The crew offers three perks. One stays with you for the run.</p>
+  <div class="perk-row">
+    <div class="perk-card"><h3>NITRO RIG</h3><p>Nitro lasts 50% longer.</p></div>
+    <div class="perk-card"><h3>ARMOR PLATE</h3><p>Your car takes 25% less damage.</p></div>
+    <div class="perk-card"><h3>GHOST PLATES</h3><p>Wanted decays twice as fast.</p></div>
+  </div>
+  <button class="btn" data-goto="play">TAKE IT AND DRIVE</button>
+</div>
+
+<div class="screen hidden" data-screen="victory">
+  <h2>THE LONG WAY HOME — DONE</h2>
+  <p>Grade A. The Broker pays. Solmar is yours tonight, Milo.</p>
+  <div class="stat-grid">
+    <div><b>$76,250</b><span>EARNED</span></div>
+    <div><b>8 / 8</b><span>JOBS</span></div>
+    <div><b>★5</b><span>MAX WANTED</span></div>
+    <div><b>x5.0</b><span>BEST CHAIN</span></div>
+    <div><b>12</b><span>NEAR MISSES</span></div>
+    <div><b>3</b><span>PERKS</span></div>
+    <div><b>6</b><span>CARS OWNED</span></div>
+    <div><b>GRADE A</b><span>RANK</span></div>
+  </div>
+  <button class="btn" id="btn-again">RUN IT AGAIN</button>
+</div>
+
+<div class="screen hidden" data-screen="busted">
+  <h2>BUSTED</h2>
+  <p>Captain Rook closes the door. The run ends here.</p>
+  <button class="btn" data-goto="title">BACK TO TITLE</button>
+</div>
+
+<div class="screen hidden" data-screen="wasted">
+  <h2>WASTED</h2>
+  <p>The Comet is scrap, and so is the plan.</p>
+  <button class="btn" data-goto="title">BACK TO TITLE</button>
+</div>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
