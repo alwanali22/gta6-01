@@ -11,6 +11,10 @@ const SUNSET = {
   ground: 0x1e1a2e, road: 0x241f33, dash: 0xf5c96b, sea: 0x0e6a6a,
 };
 
+const _c1 = new THREE.Color();
+const _c2 = new THREE.Color();
+const lerpHex = (a, b, t) => _c1.setHex(a).lerp(_c2.setHex(b), t).getHex();
+
 export function createWorld(canvas, city) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -26,7 +30,8 @@ export function createWorld(canvas, city) {
   const sun = new THREE.DirectionalLight(SUNSET.sun, 2.2);
   sun.position.set(-300, 90, 60);
   scene.add(sun);
-  scene.add(new THREE.AmbientLight(SUNSET.ambient, 1.1));
+  const amb = new THREE.AmbientLight(SUNSET.ambient, 1.1);
+  scene.add(amb);
   const hemi = new THREE.HemisphereLight(0xff9a5a, 0x2a1a3a, 0.7);
   scene.add(hemi);
 
@@ -103,7 +108,10 @@ export function createWorld(canvas, city) {
       for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
           if (hash2(i * 31 + r, c, 5) < 0.45) {
-            wins.push({ x: b.x - b.w / 2 + 2 + c * 6, y: 5 + r * 9, z: b.z + b.d / 2 + 0.1 });
+            wins.push({
+              x: b.x - b.w / 2 + 2 + c * 6, y: 5 + r * 9, z: b.z + b.d / 2 + 0.1,
+              d: b.district,
+            });
           }
         }
       }
@@ -117,8 +125,12 @@ export function createWorld(canvas, city) {
     p.set(w.x, w.y, w.z); s.set(2.2, 3, 1);
     m.compose(p, q, s);
     winMesh.setMatrixAt(i, m);
+    // District accent: each district's windows lean toward its tint.
+    const d = DISTRICTS.find((dd) => dd.id === w.d) || DISTRICTS[0];
+    winMesh.setColorAt(i, col.setHex(0xffd27a).lerp(new THREE.Color(d.tint), 0.35));
   });
   winMesh.instanceMatrix.needsUpdate = true;
+  if (winMesh.instanceColor) winMesh.instanceColor.needsUpdate = true;
   winMesh.count = wins.length;
   scene.add(winMesh);
 
@@ -155,10 +167,70 @@ export function createWorld(canvas, city) {
     m.compose(p, q, s); poles.setMatrixAt(i, m);
     p.set(lp.x, 7.2, lp.z);
     m.compose(p, q, s); glows.setMatrixAt(i, m);
+    // District accent: each lamp's glow leans toward its district tint.
+    const d = DISTRICTS.find((dd) =>
+      lp.x >= dd.x0 && lp.x < dd.x1 && lp.z >= dd.z0 && lp.z < dd.z1) || DISTRICTS[0];
+    glows.setColorAt(i, col.setHex(0xffc46b).lerp(new THREE.Color(d.tint), 0.3));
   });
   poles.instanceMatrix.needsUpdate = true;
   glows.instanceMatrix.needsUpdate = true;
+  if (glows.instanceColor) glows.instanceColor.needsUpdate = true;
   scene.add(poles); scene.add(glows);
+
+  // District pylons (chunk D): one tall neon marker per district, so the
+  // four quarters read differently from the street and from above.
+  for (const d of DISTRICTS) {
+    const px = (d.x0 + d.x1) / 2, pz = (d.z0 + d.z1) / 2;
+    const pylon = new THREE.Mesh(
+      new THREE.BoxGeometry(3, 30, 3),
+      new THREE.MeshBasicMaterial({ color: d.tint, fog: false }),
+    );
+    pylon.position.set(px, 15, pz);
+    scene.add(pylon);
+    const cap = new THREE.Mesh(
+      new THREE.BoxGeometry(5, 2, 5),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, fog: false }),
+    );
+    cap.position.set(px, 31, pz);
+    scene.add(cap);
+  }
+
+  // Safehouse room (chunk D): a small interior at the safehouse door
+  // (-160,-40) — floor, walls with a south door gap, bed, table, neon
+  // sign, warm light. Hidden until the player steps inside.
+  const room = new THREE.Group();
+  const roomMat = new THREE.MeshLambertMaterial({ color: 0x6a4a3a });
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(16, 12), new THREE.MeshLambertMaterial({ color: 0x5a4030 }));
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.set(-160, 0.1, -40);
+  room.add(floor);
+  const wall = (w, d, x, z) => {
+    const m2 = new THREE.Mesh(new THREE.BoxGeometry(w, 4.5, d), roomMat);
+    m2.position.set(x, 2.25, z);
+    room.add(m2);
+  };
+  wall(16, 0.5, -160, -46);       // north wall
+  wall(0.5, 12, -168, -40);       // west wall
+  wall(0.5, 12, -152, -40);       // east wall
+  wall(6, 0.5, -165, -34);        // south wall, west of the door
+  wall(6, 0.5, -155, -34);        // south wall, east of the door
+  const bed = new THREE.Mesh(new THREE.BoxGeometry(3, 1, 6), new THREE.MeshLambertMaterial({ color: 0x2a4a7a }));
+  bed.position.set(-165.5, 0.5, -43);
+  room.add(bed);
+  const table = new THREE.Mesh(new THREE.BoxGeometry(4, 1, 2), new THREE.MeshLambertMaterial({ color: 0x7a5a3a }));
+  table.position.set(-155, 0.5, -44);
+  room.add(table);
+  const sign = new THREE.Mesh(
+    new THREE.PlaneGeometry(5, 1.6),
+    new THREE.MeshBasicMaterial({ color: 0x2a3f5e, fog: false }),
+  );
+  sign.position.set(-160, 3.4, -45.7);
+  room.add(sign);
+  const lamp = new THREE.PointLight(0xffc46b, 60, 22);
+  lamp.position.set(-160, 4, -40);
+  room.add(lamp);
+  room.visible = false;
+  scene.add(room);
 
   // Landmarks: pier deck + two dock cranes.
   for (const lm of city.landmarks) {
@@ -308,7 +380,26 @@ export function createWorld(canvas, city) {
     },
     setMode(next) { mode = next; shotCam = null; },
     setShotCam(pos, look) { mode = 'shot'; shotCam = { pos, look }; },
+    setInterior(b) { room.visible = b; },
     update(state, dt, time) {
+      // Day cycle (chunk D): sunset (0) lerps to night (1) as the run
+      // progresses — the sun sinks and cools, the sky darkens, windows
+      // and lamps brighten.
+      const tod = state.timeOfDay || 0;
+      sun.color.setHex(lerpHex(0xff8c3a, 0x8fa8ff, tod));
+      sun.intensity = 2.2 - 1.6 * tod;
+      sun.position.set(-300 + 200 * tod, 90 + 170 * tod, 60 + 40 * tod);
+      scene.background.setHex(lerpHex(0x2b1a4e, 0x04040c, tod));
+      scene.fog.color.setHex(lerpHex(0x3a2350, 0x0a0a18, tod));
+      amb.color.setHex(lerpHex(0x8a5a9a, 0x232348, tod));
+      amb.intensity = 1.1 - 0.65 * tod;
+      hemi.color.setHex(lerpHex(0xff9a5a, 0x223355, tod));
+      hemi.groundColor.setHex(lerpHex(0x2a1a3a, 0x0a0a14, tod));
+      hemi.intensity = 0.7 - 0.4 * tod;
+      disc.position.y = 42 - 72 * tod;
+      disc.material.color.setHex(lerpHex(0xffb347, 0x555566, tod));
+      winMat.color.setHex(lerpHex(0xffd27a, 0xffe9b0, tod));
+      glowMat.color.setHex(lerpHex(0xffc46b, 0xfff0c0, tod));
       // Pedestrians wander the sidewalks on fixed loops; they flee the
       // player when the heat is on (chunk B pedOffset).
       for (let i = 0; i < 48; i++) {
@@ -398,6 +489,13 @@ export function createWorld(canvas, city) {
       if (mode === 'shot' && shotCam) {
         camera.position.set(...shotCam.pos);
         camera.lookAt(...shotCam.look);
+      } else if (state.interior) {
+        // Inside the safehouse: high chase cam, looking over the walls
+        // into the roofless room.
+        const back = pl.heading + Math.PI;
+        camera.position.set(
+          pl.x + Math.sin(back) * 6, 7.5, pl.z + Math.cos(back) * 6);
+        camera.lookAt(pl.x, 1, pl.z);
       } else if (mode === 'chase') {
         const back = pl.heading + Math.PI;
         const cx = pl.x + Math.sin(back) * CAMERA.chaseDist;
@@ -464,6 +562,15 @@ export function createWorld(canvas, city) {
       if (state.event) {
         ctx.fillStyle = '#c04aff';
         ctx.beginPath(); ctx.arc(sx(state.event.x), sz(state.event.z), 4, 0, Math.PI * 2); ctx.fill();
+      }
+      // Active gig (chunk D): gold diamond.
+      if (state.gig) {
+        ctx.fillStyle = '#ffd24a';
+        const gx = sx(state.gig.x), gz = sz(state.gig.z);
+        ctx.beginPath();
+        ctx.moveTo(gx, gz - 5); ctx.lineTo(gx + 5, gz);
+        ctx.lineTo(gx, gz + 5); ctx.lineTo(gx - 5, gz);
+        ctx.closePath(); ctx.fill();
       }
       // District names on the map (chunk C, RANK 1 lesson).
       ctx.fillStyle = 'rgba(255,255,255,0.75)';

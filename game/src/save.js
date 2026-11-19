@@ -17,6 +17,8 @@ const FIELDS = [
   // Chunk C state.
   'weapon', 'owned', 'ammo', 'respect', 'districtRep', 'outfit',
   'heatFlags', 'missionGrades', 'career', 'cleanUsed', 'combatCd',
+  // Chunk D state.
+  'timeOfDay', 'gig',
 ];
 
 export function listSlots() {
@@ -75,6 +77,7 @@ export function loadSlot(state, i) {
   // (main.js recreates the police system right after load).
   state.standoff = null;
   state.pursuit = null;
+  state.interior = false;
   state.screen = 'play';
   return true;
 }

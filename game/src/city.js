@@ -35,10 +35,16 @@ export function buildCity(seed = 1337) {
       if (hash2(bx, bz, seed) < 0.08) continue; // a few open plazas
       const n = 1 + Math.floor(rng.next() * 3);
       for (let i = 0; i < n; i++) {
-        const cx = bx + rng.range(14, roadStep - 14);
-        const cz = bz + rng.range(14, roadStep - 14);
         const w = rng.range(12, 26);
         const d = rng.range(12, 26);
+        // Keep the whole footprint out of the road corridors: the old
+        // 14u centre margin let a 26u-wide tower's edge sit 1u from a
+        // road centreline, blocking the road itself (one tower on
+        // x=-160 at z~35 wedged every car driving north on mission 1).
+        // Margin = road half-width + car collision radius + 1u.
+        const m = roadHalf + 3.4;
+        const cx = bx + rng.range(m + w / 2, roadStep - m - w / 2);
+        const cz = bz + rng.range(m + d / 2, roadStep - m - d / 2);
         const h = rng.range(10, 62);
         const district = DISTRICTS.find((dd) =>
           cx >= dd.x0 && cx < dd.x1 && cz >= dd.z0 && cz < dd.z1) || DISTRICTS[0];

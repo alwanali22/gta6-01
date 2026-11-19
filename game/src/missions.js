@@ -1,10 +1,11 @@
 // missions.js — the 10-job chain, perk drafts, street race, branching
 // choice, 3-phase heist, and seeded random events. Every payout and
 // timer comes from config.js; every target sits on a road.
-import { MISSIONS, WORLD, PERKS, RACE, BRANCH, HEIST, EVENTS } from './config.js';
+import { MISSIONS, WORLD, PERKS, RACE, BRANCH, HEIST, EVENTS, GIGS } from './config.js';
 import { makeRng } from './random.js';
 import { nearestRoadPoint, randomRoadPoint } from './city.js';
 import { startStandoff } from './police.js';
+import { hasPerk } from './player.js';
 
 const snap = (x, z) => nearestRoadPoint(x, z);
 const TARGETS = [
@@ -52,7 +53,7 @@ function arrive(state, x, z, r) {
 }
 
 export function createMissions(city) {
-  return { city, rng: makeRng(4242), eventCount: 0 };
+  return { city, rng: makeRng(4242), eventCount: 0, gigRng: makeRng(7777), gigAt: 5 };
 }
 
 export function startMission(state, i, fx) {
@@ -82,7 +83,7 @@ export function startMission(state, i, fx) {
   if (fx && fx.toast) fx.toast('JOB ' + (i + 1) + ' — ' + m.name);
 }
 
-function renderDraft(state) {
+export function renderDraft(state) {
   const cards = document.querySelectorAll('.perk-card');
   state.draftOptions.forEach((p, i) => {
     const el = cards[i];
@@ -276,6 +277,37 @@ export function updateMissions(m, state, dt, fx) {
         fx.toast(ev.name + ' EXPIRED');
       }
       state.event = null;
+    }
+  }
+
+  // --- Gigs: timed side jobs, one at a time (chunk D). Seeded, so a
+  // run's gigs are the same every time. Worth real money on the way
+  // to a mission marker — the difference between grade C and grade A.
+  if (!state.gig) {
+    state.gigClock = (state.gigClock || 0) + dt;
+    if (state.gigClock >= m.gigAt) {
+      const g = GIGS[Math.floor(m.gigRng.next() * GIGS.length)];
+      const p = randomRoadPoint(m.gigRng, m.city);
+      state.gig = { id: g.id, name: g.name, x: p.x, z: p.z, ttl: 45, reward: g.payout };
+      state.gigClock = 0;
+      m.gigAt = 5;
+      fx.toast('GIG — ' + g.name + ' (+$' + g.payout + ')');
+    }
+  } else {
+    const gig = state.gig;
+    gig.ttl -= dt;
+    if (arrive(state, gig.x, gig.z, 8)) {
+      const pay = Math.round(gig.reward * (hasPerk(state, 'smooth') ? 1.25 : 1));
+      state.cash += pay; state.earned += pay;
+      fx.toast(gig.name + ' DONE +$' + pay);
+      state.gig = null;
+      state.gigClock = 0;
+      m.gigAt = 5;
+    } else if (gig.ttl <= 0) {
+      fx.toast(gig.name + ' EXPIRED');
+      state.gig = null;
+      state.gigClock = 0;
+      m.gigAt = 5;
     }
   }
 
