@@ -75,6 +75,8 @@ export function updatePlayer(p, state, input, city, dt, fx) {
         p.hotwire += dt;
         if (p.hotwire >= secs) {
           car.owner = 'player';
+          car.stolen = true;
+          state.career.carsStolen = (state.career.carsStolen || 0) + 1;
           state.heat = Math.min(5, state.heat + HOTWIRE.stealHeat);
           p.hotwire = 0; p.hotwireCar = null;
           enterCar(state, car, fx);

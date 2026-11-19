@@ -193,9 +193,12 @@ export function createWorld(canvas, city) {
   scene.add(peds);
 
   // Cars: pooled meshes, one per car slot (6). Player figure: a standing
-  // capsule, hidden while driving (chunk B owns that switch).
+  // capsule, hidden while driving (chunk B owns that switch). Chunk C adds
+  // visible customization: neon underglow + spoiler, driven by garage.
   const carGeo = new THREE.BoxGeometry(4.4, 1.3, 2.1);
   const carTop = new THREE.BoxGeometry(2.4, 0.9, 1.9);
+  const neonGeo = new THREE.PlaneGeometry(4.8, 2.6);
+  const spoilGeo = new THREE.BoxGeometry(0.25, 0.5, 2.3);
   const carMeshes = [];
   for (let i = 0; i < 6; i++) {
     const g = new THREE.Group();
@@ -203,8 +206,19 @@ export function createWorld(canvas, city) {
     body.position.y = 0.8;
     const top = new THREE.Mesh(carTop, new THREE.MeshLambertMaterial({ color: 0x222222 }));
     top.position.set(-0.3, 1.8, 0);
-    g.add(body); g.add(top);
+    const neon = new THREE.Mesh(neonGeo, new THREE.MeshBasicMaterial({
+      color: 0x4ae8ff, transparent: true, opacity: 0.55,
+    }));
+    neon.rotation.x = -Math.PI / 2;
+    neon.position.y = 0.15;
+    neon.visible = false;
+    const spoiler = new THREE.Mesh(spoilGeo, new THREE.MeshLambertMaterial({ color: 0x111111 }));
+    spoiler.position.set(-2.1, 1.9, 0);
+    spoiler.visible = false;
+    g.add(body); g.add(top); g.add(neon); g.add(spoiler);
     g.visible = false;
+    g.userData.neon = neon;
+    g.userData.spoiler = spoiler;
     scene.add(g);
     carMeshes.push(g);
   }
@@ -242,6 +256,27 @@ export function createWorld(canvas, city) {
   heli.visible = false;
   heli.userData.rotor = heliRotor;
   scene.add(heli);
+  // Heli searchlight pool on the ground (chunk C): a bright disc that
+  // follows the helicopter, so "heli overhead" reads even from above.
+  const pool = new THREE.Mesh(
+    new THREE.CircleGeometry(9, 24),
+    new THREE.MeshBasicMaterial({ color: 0xfff2b0, transparent: true, opacity: 0.28 }),
+  );
+  pool.rotation.x = -Math.PI / 2;
+  pool.position.y = 0.12;
+  pool.visible = false;
+  scene.add(pool);
+  // Police cruisers + roadblocks: pooled boxes (chunk C).
+  const policeGeo = new THREE.BoxGeometry(4.4, 1.3, 2.1);
+  const policeMesh = new THREE.InstancedMesh(
+    policeGeo, new THREE.MeshLambertMaterial({ color: 0x2244cc }), 6);
+  policeMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  scene.add(policeMesh);
+  const blockGeo = new THREE.BoxGeometry(5, 1.6, 1);
+  const blockMesh = new THREE.InstancedMesh(
+    blockGeo, new THREE.MeshLambertMaterial({ color: 0x888888 }), 2);
+  blockMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  scene.add(blockMesh);
 
   let mode = 'orbit';
   let shotCam = null;
@@ -313,6 +348,11 @@ export function createWorld(canvas, city) {
         g.position.set(car.x, 0, car.z);
         g.rotation.y = -car.heading;
         g.children[0].material.color.setHex(car.color);
+        // Visible customization from the garage (chunk C).
+        const up = (state.garage || {})[car.id] || {};
+        g.userData.neon.visible = !!up.neon;
+        g.userData.neon.material.color.setHex(car.color);
+        g.userData.spoiler.visible = !!up.spoiler;
       });
       figure.visible = state.player.onFoot;
       figure.position.set(state.player.x, 1.6, state.player.z);
@@ -323,9 +363,35 @@ export function createWorld(canvas, city) {
         heli.visible = true;
         heli.position.set(state.police.heli.x, 26, state.police.heli.z);
         heli.userData.rotor.rotation.y += dt * 18;
+        pool.visible = true;
+        pool.position.set(state.police.heli.x, 0.12, state.police.heli.z);
       } else {
         heli.visible = false;
+        pool.visible = false;
       }
+
+      // Police cruisers + roadblocks (chunk C).
+      const units = (state.police && state.police.units) || [];
+      const uLen = Math.min(6, units.length);
+      for (let i = 0; i < uLen; i++) {
+        const u = units[i];
+        p.set(u.x, 0.7, u.z); s.set(1, 1, 1);
+        m.compose(p, q, s);
+        policeMesh.setMatrixAt(i, m);
+        policeMesh.setColorAt(i, col.setHex(u.disabled > 0 ? 0x555555 : 0x2244cc));
+      }
+      policeMesh.count = uLen;
+      policeMesh.instanceMatrix.needsUpdate = true;
+      if (policeMesh.instanceColor) policeMesh.instanceColor.needsUpdate = true;
+      const blocks = (state.police && state.police.roadblocks) || [];
+      const bLen = Math.min(2, blocks.length);
+      for (let i = 0; i < bLen; i++) {
+        p.set(blocks[i].x, 0.8, blocks[i].z); s.set(1, 1, 1);
+        m.compose(p, q, s);
+        blockMesh.setMatrixAt(i, m);
+      }
+      blockMesh.count = bLen;
+      blockMesh.instanceMatrix.needsUpdate = true;
 
       // Camera.
       const pl = state.player;
@@ -398,6 +464,31 @@ export function createWorld(canvas, city) {
       if (state.event) {
         ctx.fillStyle = '#c04aff';
         ctx.beginPath(); ctx.arc(sx(state.event.x), sz(state.event.z), 4, 0, Math.PI * 2); ctx.fill();
+      }
+      // District names on the map (chunk C, RANK 1 lesson).
+      ctx.fillStyle = 'rgba(255,255,255,0.75)';
+      ctx.font = '7px sans-serif';
+      ctx.textAlign = 'center';
+      for (const d of DISTRICTS) {
+        ctx.fillText(d.name, sx((d.x0 + d.x1) / 2), sz((d.z0 + d.z1) / 2));
+      }
+      // Hot zone (orange) + roadblocks (grey) + police units (blue).
+      const P = state.police;
+      if (P && P.hotZone) {
+        ctx.strokeStyle = '#ff8c3a'; ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(sx(P.hotZone.x), sz(P.hotZone.z), (P.hotZone.r / (WORLD.half * 2)) * w, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      if (P && P.roadblocks) {
+        ctx.fillStyle = '#999999';
+        for (const rb of P.roadblocks) ctx.fillRect(sx(rb.x) - 3, sz(rb.z) - 3, 6, 6);
+      }
+      if (P && P.units) {
+        ctx.fillStyle = '#4a7aff';
+        for (const u of P.units) {
+          ctx.beginPath(); ctx.arc(sx(u.x), sz(u.z), 3, 0, Math.PI * 2); ctx.fill();
+        }
       }
       // Cars + player.
       for (const car of state.cars) {

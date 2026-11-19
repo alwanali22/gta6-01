@@ -4,6 +4,7 @@
 import { MISSIONS, WORLD, PERKS, RACE, BRANCH, HEIST, EVENTS } from './config.js';
 import { makeRng } from './random.js';
 import { nearestRoadPoint, randomRoadPoint } from './city.js';
+import { startStandoff } from './police.js';
 
 const snap = (x, z) => nearestRoadPoint(x, z);
 const TARGETS = [
@@ -95,6 +96,10 @@ function completeMission(m, state, fx, payout) {
   const pay = payout !== undefined ? payout : MISSIONS[state.mission].payout;
   state.cash += pay; state.earned += pay; state.rep += 25;
   state.chain = Math.min(5, state.chain + 0.5);
+  // Mission letter grade from the chain held at the finish.
+  const grade = state.chain >= 4 ? 'S' : state.chain >= 2.5 ? 'A'
+    : state.chain >= 1.5 ? 'B' : 'C';
+  state.missionGrades.push({ mission: state.mission, grade });
   state.done.push(state.mission);
   state.target = null; state.event = null;
   state.raceCheckpoints = []; state.branchMarkers = [];
@@ -255,9 +260,14 @@ export function updateMissions(m, state, dt, fx) {
     const ev = state.event;
     ev.ttl -= dt;
     if (arrive(state, ev.x, ev.z, 6)) {
-      state.cash += ev.reward; state.earned += ev.reward;
-      fx.toast(ev.name + ' DONE +$' + ev.reward);
-      state.event = null;
+      if (ev.id === 'standoff') {
+        state.event = null;
+        startStandoff(state, fx);
+      } else {
+        state.cash += ev.reward; state.earned += ev.reward;
+        fx.toast(ev.name + ' DONE +$' + ev.reward);
+        state.event = null;
+      }
     } else if (ev.ttl <= 0) {
       if (ev.heat > 0) {
         state.heat = Math.min(5, state.heat + ev.heat);

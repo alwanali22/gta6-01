@@ -103,7 +103,49 @@ export const WEAPONS = {
   pistol:  { name: 'PISTOL',  dmg: 34, range: 55, cd: 0.45, price: 0,    pack: 0,  packPrice: 0,   ammo: Infinity },
   shotgun: { name: 'SHOTGUN', dmg: 70, range: 30, cd: 0.9,  price: 1200, pack: 6,  packPrice: 150, ammo: 0 },
   smg:     { name: 'SMG',     dmg: 14, range: 70, cd: 0.12, price: 900,  pack: 40, packPrice: 200, ammo: 0 },
+  rifle:   { name: 'RIFLE',   dmg: 55, range: 85, cd: 0.7,  price: 1500, pack: 30, packPrice: 250, ammo: 0 },
 };
+export const WEAPON_ORDER = ['pistol', 'shotgun', 'smg', 'rifle'];
+
+// Chunk C: respect ranks, HEAT flags, named police units, crew voice, standoff.
+export const RESPECT = {
+  ranks: [
+    { name: 'ROOKIE',    rep: 0 },
+    { name: 'STREET',    rep: 100 },
+    { name: 'NOTORIOUS', rep: 200 },
+    { name: 'LEGEND',    rep: 300 },
+  ],
+  discount: [0, 0.1, 0.2, 0.3],   // garage discount per rank
+  decayMult: [1, 1.2, 1.5, 1.5],  // heat decay multiplier per rank
+  chainFloor: [1, 1.5, 2, 2.5],   // chain never drops below this
+  legendBonus: { id: 'm11', name: "LEGEND'S LAST RUN", payout: 6000 },
+};
+export const HEAT_FLAGS = ['FACE', 'FIT', 'CAR', 'CREW'];
+export const POLICE_UNITS = [
+  { tag: 'KITE-1',   role: 'MARKSMAN' },
+  { tag: 'MARLIN-3', role: 'SHORE WATCH' },
+  { tag: 'CORAL-48', role: 'RAMMING' },
+  { tag: 'GULL-7',   role: 'FLANKING' },
+  { tag: 'PIER-2',   role: 'FOOT CHASE' },
+  { tag: 'SHORE-5',  role: 'IN PURSUIT' },
+];
+export const CREW = {
+  name: 'MIRA KESANG',
+  lines: [
+    "Comet's yours, Milo. Don't scratch her.",
+    'Package, clock, no questions. Move.',
+    "Rook's trap is ahead — break it clean.",
+    'Night shift is out. Outrun them all.',
+    'Voss is waiting. Pay, or run. Your call.',
+    'One vault, one sunset. Make it count.',
+    'Pink slip on the line. No brakes, Milo.',
+    'Crew or cash, Milo. Choose fast.',
+    "Convoy must not see you. Ghost it.",
+    "Final heist. Three phases. Come home.",
+  ],
+};
+export const STANDOFF = { ttl: 60, waves: 3, perWave: 2, pay: 600, rep: 10, heat: 2 };
+export const GARAGE_EXTRAS = { neon: 400, spoiler: 350 };
 
 export const RADIO = [
   { name: 'SOLMAR FM',    tag: 'SUNSET DRIVE', bpm: 92,  root: 110,  wave: 'triangle' },
@@ -135,5 +177,6 @@ export const EVENTS = {
     { id: 'stall', name: 'STALLED DRIVER', reward: 300, heat: 0, ttl: 30 },
     { id: 'witness', name: 'WITNESS', reward: 250, heat: 1, ttl: 20 },
     { id: 'jam', name: 'ROADBLOCK JAM', reward: 150, heat: 0, ttl: 25 },
+    { id: 'standoff', name: 'STANDOFF', reward: 600, heat: 2, ttl: 60 },
   ],
 };

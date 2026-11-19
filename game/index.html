@@ -21,12 +21,16 @@
   #hud-objective { top: 12px; left: 50%; transform: translateX(-50%); background: rgba(10, 8, 20, 0.72);
     border: 1px solid rgba(255, 74, 74, 0.5); border-radius: 8px; padding: 8px 16px; font-weight: 700;
     letter-spacing: 1px; position: absolute; }
-  #minimap { border: 1px solid rgba(255, 210, 74, 0.5); border-radius: 4px; display: block; }
+  #hud-pursuit { top: 52px; left: 50%; transform: translateX(-50%); background: rgba(10, 8, 20, 0.72);
+    border: 1px solid rgba(255, 74, 74, 0.5); border-radius: 8px; padding: 4px 12px; font-weight: 700;
+    letter-spacing: 1px; position: absolute; font-size: 12px; color: #ffb0b0; }
+  #hud-pursuit:empty { display: none; }
+  #hud-crew { color: #9ad4ff; font-size: 12px; max-width: 320px; }
   #toast { position: absolute; bottom: 110px; left: 50%; transform: translateX(-50%);
     background: rgba(10, 8, 20, 0.85); border: 1px solid #ffd24a; border-radius: 8px;
     padding: 10px 22px; font-weight: 700; letter-spacing: 1px; }
   .screen { position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column;
-    align-items: center; justify-content: center; text-align: center;
+    align-items: center; justify-content: center; text-align: center; overflow-y: auto;
     background: linear-gradient(180deg, rgba(20, 10, 40, 0.55), rgba(10, 8, 20, 0.88)); padding: 24px; }
   .screen h1 { font-size: 56px; letter-spacing: 4px; color: #ffd24a; text-shadow: 0 3px 0 #7a2a4a, 0 6px 24px rgba(0,0,0,0.8); }
   .screen h2 { font-size: 34px; letter-spacing: 3px; color: #ffd24a; margin-bottom: 12px; }
@@ -62,17 +66,21 @@
 <div id="hud" class="hidden">
   <div id="hud-top-left" class="hud-box">
     <div id="hud-stars">☆☆☆☆☆</div>
+    <div id="hud-heat-flags">FACE ○ FIT ○ CAR ○ CREW ○</div>
     <div id="hud-cash">$0</div>
     <div id="hud-rep">REP 0</div>
+    <div id="hud-respect">RANK ROOKIE</div>
+    <div id="hud-turf">HOME TURF: —</div>
     <div id="hud-chain">CHAIN x1.0</div>
   </div>
   <div id="hud-objective">FREE ROAM — SOLMAR</div>
+  <div id="hud-pursuit"></div>
   <div id="hud-top-right" class="hud-box">
     <div id="weapon-value">PISTOL · ∞ RDS [Q] [F]</div>
     <div id="radio-value">RADIO OFF</div>
   </div>
   <div id="hud-bottom-left" class="hud-box"><canvas id="minimap" width="180" height="144"></canvas></div>
-  <div id="hud-bottom-right" class="hud-box"><div id="hud-speed">0 km/h</div><div>SOLMAR · SUNSET</div></div>
+  <div id="hud-bottom-right" class="hud-box"><div id="hud-speed">0 km/h</div><div id="hud-district">MARINA ROW</div><div id="hud-crew"></div><div>SOLMAR · SUNSET</div></div>
   <div id="toast" class="hidden"></div>
 </div>
 
@@ -85,13 +93,25 @@
   <div class="counts">4 DISTRICTS · 10 MISSIONS · 6 CARS · 12 PERKS · 3 RADIO STATIONS</div>
   <div id="save-slots"></div>
   <button class="btn" id="btn-start">START THE RUN</button>
+  <button class="btn ghost" data-goto="stats">STATS</button>
 </div>
 
 <div class="screen hidden" data-screen="pause">
   <h2>PAUSED</h2>
   <p>The sun waits for no one, Milo.</p>
+  <button class="btn" data-save-slot="0">SAVE SLOT 1</button>
+  <button class="btn" data-save-slot="1">SAVE SLOT 2</button>
+  <button class="btn" data-save-slot="2">SAVE SLOT 3</button>
   <button class="btn" id="btn-resume">RESUME</button>
+  <button class="btn ghost" data-goto="stats">STATS</button>
   <button class="btn ghost" id="btn-title">QUIT TO TITLE</button>
+</div>
+
+<div class="screen hidden" data-screen="stats">
+  <h2>CAREER STATS</h2>
+  <div id="stats-body"></div>
+  <button class="btn ghost" data-goto="play">BACK TO THE STREET</button>
+  <button class="btn ghost" data-goto="title">TITLE</button>
 </div>
 
 <div class="screen hidden" data-screen="garage">

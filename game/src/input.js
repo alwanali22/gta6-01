@@ -17,6 +17,7 @@ export const ACTIONS = {
   one: ['Digit1'],
   two: ['Digit2'],
   three: ['Digit3'],
+  four: ['Digit4'],
 };
 
 const CODE_TO_ACTION = {};

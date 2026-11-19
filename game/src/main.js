@@ -1,6 +1,6 @@
 // main.js — boot, loop, state, screens and shot staging.
 // Chunk B owns player + vehicles + traffic + missions; chunk C owns
-// police, combat, hud, audio and saves. HUD depth lives in hud.js (chunk C).
+// police, combat, respect, hud, audio and saves.
 import * as THREE from 'three';
 import { CARS, MISSIONS, WORLD, WEAPONS, ECONOMY } from './config.js';
 import { buildCity } from './city.js';
@@ -13,6 +13,12 @@ import {
   createMissions, startMission, updateMissions, updateDraft, pickDraft,
   objectiveText,
 } from './missions.js';
+import { createPolice, updatePolice } from './police.js';
+import { fire, cycleWeapon, selectWeapon } from './combat.js';
+import { respectTick } from './respect.js';
+import { createAudio, radioCycle, stationName, shotSound } from './audio.js';
+import { syncHud, renderTitle, renderGarage, renderStats, garageClick } from './hud.js';
+import { loadSlot } from './save.js';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -24,7 +30,7 @@ export function makeState() {
     cars: CARS.map((c) => ({
       id: c.id, name: c.name, x: c.spawn.x, z: c.spawn.z,
       heading: 0, color: c.color, price: c.price, owner: c.id === 'comet' ? 'player' : 'street',
-      hp: 100, visible: true,
+      hp: 100, visible: true, stolen: false,
     })),
     traffic: [],
     police: null,
@@ -61,24 +67,51 @@ export function makeState() {
     draftOptions: [],
     convoy: null,
     shadowTimer: 0,
+    // Chunk C state.
+    heatFlags: { face: false, fit: false, car: false, crew: false },
+    pursuit: null,
+    weapon: 'pistol',
+    owned: ['pistol'],
+    ammo: { pistol: -1, shotgun: 0, smg: 0, rifle: 0 },
+    respect: 0,
+    districtRep: {},
+    outfit: 0,
+    standoff: null,
+    missionGrades: [],
+    career: { carsStolen: 0, copsEvaded: 0, takenOut: 0, shotsFired: 0 },
+    cleanUsed: false,
+    combatCd: 0,
   };
 }
 
 const state = makeState();
 const city = buildCity(1337);
 const input = createInput();
+const audioSys = createAudio();
 let world = null;
 let playerSys = null;
 let trafficSys = null;
 let missionsSys = null;
+let policeSys = null;
+
+const ctx = {
+  audio: audioSys,
+  audioName: () => stationName(audioSys),
+  toast: (m) => toast(m),
+  setScreen: (n) => setScreen(n),
+  loadGame: (i) => loadGame(i),
+};
 
 export function setScreen(name) {
   state.screen = name;
   document.querySelectorAll('.screen').forEach((el) => {
     el.classList.toggle('hidden', el.dataset.screen !== name);
   });
-  $('#hud').classList.toggle('hidden', name === 'title');
+  $('#hud').classList.toggle('hidden', name === 'title' || name === 'stats');
   if (world) world.setMode(name === 'play' ? 'chase' : 'orbit');
+  if (name === 'garage') renderGarage(state, ctx);
+  if (name === 'title') renderTitle(state);
+  if (name === 'stats') renderStats(state);
 }
 
 export function stageShot(name) {
@@ -94,6 +127,17 @@ export function stageShot(name) {
     state.cash = 3313;
     state.mission = 0;
     state.target = { x: -160, z: 120 };
+    state.heatFlags = { face: true, fit: true, car: true, crew: false };
+    state.pursuit = 'PURSUIT';
+    state.police = {
+      units: [
+        { tag: 'KITE-1', role: 'MARKSMAN', x: -152, z: -20, heading: 0, speed: 16, hp: 100, disabled: 0, standoff: false },
+        { tag: 'CORAL-48', role: 'RAMMING', x: -168, z: 10, heading: 0, speed: 16, hp: 100, disabled: 0, standoff: false },
+      ],
+      heli: { x: -160, z: -100, alt: 26, heading: 0, retreat: 0 },
+      roadblocks: [{ x: -160, z: 40, heading: 0 }],
+      bustT: 0, hotZone: null, standoff: null,
+    };
     const back = pl.heading + Math.PI;
     world.setShotCam(
       [pl.x + Math.sin(back) * 16, 4.5, pl.z + Math.cos(back) * 16],
@@ -106,7 +150,7 @@ export function stageShot(name) {
   } else if (name === 'victory') {
     setScreen('victory');
   }
-  syncHud();
+  syncHud(state, ctx);
 }
 
 function showVictory(s) {
@@ -126,22 +170,6 @@ function showVictory(s) {
   setScreen('victory');
 }
 
-function syncHud() {
-  const set = (id, text) => { const el = $(id); if (el) el.textContent = text; };
-  set('#hud-cash', '$' + state.cash.toLocaleString('en-US'));
-  set('#hud-rep', 'REP ' + state.rep);
-  set('#hud-chain', 'CHAIN x' + state.chain.toFixed(1));
-  set('#hud-stars', '★'.repeat(Math.round(state.heat)) + '☆'.repeat(5 - Math.round(state.heat)));
-  if (state.runActive) set('#hud-objective', objectiveText(state));
-  else {
-    const m = MISSIONS[state.mission];
-    set('#hud-objective', m ? m.name + ' — ' + m.text : 'FREE ROAM — SOLMAR');
-  }
-  set('#hud-speed', Math.round(Math.abs(state.player.speed) * 3.6) + ' km/h');
-  set('#weapon-value', WEAPONS.pistol.name + ' · ∞ RDS [Q] [F]');
-  set('#radio-value', 'RADIO OFF');
-}
-
 let toastTimer = 0;
 function toast(msg) {
   const el = $('#toast');
@@ -151,22 +179,62 @@ function toast(msg) {
   toastTimer = 3;
 }
 
-const fx = { toast, setScreen, showVictory };
+const fx = {
+  toast,
+  setScreen,
+  showVictory,
+  busted: (s) => { s.runActive = false; setScreen('busted'); },
+};
+
+function loadGame(i) {
+  if (!loadSlot(state, i)) return false;
+  // Recreate every system: a reload leaves the module-level systems null,
+  // and the loop would die on the first frame after load.
+  playerSys = createPlayer();
+  trafficSys = createTraffic(city);
+  missionsSys = createMissions(city);
+  policeSys = createPolice(city);
+  state.police = policeSys;
+  state.runActive = true;
+  setScreen('play');
+  syncHud(state, ctx);
+  return true;
+}
 
 function step(dt) {
   state.time += dt;
   if (state.screen === 'play' && state.runActive) {
+    state.combatCd = Math.max(0, state.combatCd - dt);
     updatePlayer(playerSys, state, input, city, dt, fx);
     if (!state.player.onFoot) updateVehicle(state, input, city, dt, fx);
     updateTraffic(trafficSys, state, dt);
+    if (policeSys) updatePolice(policeSys, state, dt, fx);
     updateMissions(missionsSys, state, dt, fx);
+    respectTick(state, fx);
     state.maxHeat = Math.max(state.maxHeat, state.heat);
     state.bestChain = Math.max(state.bestChain, state.chain);
+    // Wasted: every car wrecked or sold while on foot.
+    if (state.player.onFoot && state.cars.every((c) => c.hp <= 0 || !c.visible)) {
+      state.runActive = false;
+      setScreen('wasted');
+    }
+    // Combat + radio + garage keys.
+    if (input.tapped('fire') && fire(state, state.police, fx)) shotSound(audioSys);
+    if (input.tapped('wheel')) cycleWeapon(state);
+    if (input.tapped('radio')) toast('RADIO — ' + radioCycle(audioSys));
+    if (input.tapped('one')) selectWeapon(state, 0);
+    if (input.tapped('two')) selectWeapon(state, 1);
+    if (input.tapped('three')) selectWeapon(state, 2);
+    if (input.tapped('four')) selectWeapon(state, 3);
   }
   if (state.screen === 'draft' && missionsSys) updateDraft(missionsSys, state, input, fx);
   if (input.tapped('pause')) {
     if (state.screen === 'play') setScreen('pause');
     else if (state.screen === 'pause') setScreen('play');
+  }
+  if (input.tapped('shop')) {
+    if (state.screen === 'play') setScreen('garage');
+    else if (state.screen === 'garage') setScreen('play');
   }
   if (input.tapped('interact') && state.screen === 'title') startRun();
   if (toastTimer > 0) {
@@ -183,9 +251,11 @@ function startRun() {
   playerSys = createPlayer();
   trafficSys = createTraffic(city);
   missionsSys = createMissions(city);
+  policeSys = createPolice(city);
+  state.police = policeSys;
   setScreen('play');
   startMission(state, 0, fx);
-  syncHud();
+  syncHud(state, ctx);
 }
 
 function frame(t) {
@@ -195,10 +265,10 @@ function frame(t) {
   world.update(state, dt, state.time);
   const mm = $('#minimap');
   if (mm && mm.getContext) {
-    const ctx = mm.getContext('2d');
-    world.drawMinimap(ctx, mm.width, mm.height, state);
+    const ctx2d = mm.getContext('2d');
+    world.drawMinimap(ctx2d, mm.width, mm.height, state);
   }
-  syncHud();
+  syncHud(state, ctx);
   requestAnimationFrame(frame);
 }
 
@@ -210,8 +280,15 @@ function boot() {
   const shot = params.get('shot');
   if (shot) stageShot(shot);
   else setScreen('title');
-  syncHud();
-  window.__solmar = { state, city, input };
+  syncHud(state, ctx);
+  window.__solmar = {
+    state, city, input,
+    police: { createPolice, updatePolice },
+    combat: { fire, cycleWeapon, selectWeapon },
+    audio: { radioCycle, stationName },
+    save: { loadSlot },
+    hud: { syncHud },
+  };
   window.__world = world;
   let frames = 0;
   const ready = () => {
@@ -231,6 +308,7 @@ function boot() {
     el.addEventListener('click', () => {
       if (state.screen === 'draft' && missionsSys) pickDraft(missionsSys, state, i, fx);
     }));
+  document.addEventListener('click', (ev) => garageClick(state, ctx, ev));
   requestAnimationFrame((t) => { frame.last = t; requestAnimationFrame(frame); });
 }
 
