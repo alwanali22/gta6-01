@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SOLMAR: SUNSET GETAWAY</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #14101c; color: #f2ead8;
+    font-family: Verdana, Geneva, sans-serif; }
+  #scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  .hidden { display: none !important; }
+  #hud { position: fixed; inset: 0; pointer-events: none; font-size: 13px; }
+  .panel { background: rgba(12, 10, 20, 0.72); border: 1px solid #6b4a2e; border-radius: 6px; padding: 6px 9px; }
+  #wantedBox { position: absolute; top: 10px; left: 10px; }
+  #stars { color: #ffd23a; font-size: 20px; letter-spacing: 2px; }
+  #objectiveBox { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); text-align: center; min-width: 380px; }
+  #objective { font-weight: bold; color: #ffd23a; }
+  #cashBox { position: absolute; top: 10px; right: 10px; text-align: right; }
+  #cash { font-size: 20px; font-weight: bold; color: #7dd87d; }
+  #chain { color: #ff7ad9; font-weight: bold; }
+  #speedo { font-size: 16px; }
+  #mapBox { position: absolute; left: 10px; bottom: 10px; }
+  #minimap { width: 150px; height: 150px; display: block; border: 1px solid #6b4a2e; }
+  #dispatch { margin-top: 4px; color: #ff8a7a; font-size: 11px; }
+  #gearBox { position: absolute; right: 10px; bottom: 10px; text-align: right; }
+  #toast { position: absolute; left: 50%; bottom: 110px; transform: translateX(-50%); color: #ffd23a;
+    font-size: 18px; font-weight: bold; text-shadow: 0 2px 4px #000; }
+  #dialogue { position: absolute; left: 50%; bottom: 78px; transform: translateX(-50%); color: #bfe8ff; font-style: italic; }
+  #btn-sound { pointer-events: auto; cursor: pointer; background: #2a2118; color: #f2ead8; border: 1px solid #6b4a2e; padding: 4px 8px; }
+  .screen { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: rgba(10, 8, 18, 0.82); z-index: 5; }
+  .card { max-width: 640px; width: 92%; background: #1a1426; border: 2px solid #b5763a; border-radius: 10px; padding: 22px; text-align: center; }
+  .card h1 { color: #ff9a52; font-size: 30px; letter-spacing: 1px; }
+  .tagline { color: #ffd23a; font-weight: bold; margin: 8px 0; }
+  .chainline { color: #ff7ad9; font-weight: bold; margin-bottom: 10px; }
+  .counts { color: #7dd8d8; margin-bottom: 12px; }
+  .howto { text-align: left; margin: 10px auto; max-width: 480px; line-height: 1.7; }
+  .slots { margin: 10px 0; color: #bfe8ff; font-size: 12px; line-height: 1.8; }
+  .bigbtn { pointer-events: auto; cursor: pointer; background: #d8402e; color: #fff; border: none;
+    border-radius: 6px; padding: 12px 34px; font-size: 18px; font-weight: bold; margin-top: 10px; }
+  .bigbtn:hover { background: #f0503a; }
+  .perkrow { display: flex; gap: 10px; justify-content: center; margin: 14px 0; }
+  .perk { flex: 1; border: 1px solid #ff7ad9; border-radius: 6px; padding: 10px; }
+  .perk b { color: #ff7ad9; }
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 12px 0; text-align: left; }
+  .stats div { background: #241b34; padding: 6px 8px; border-radius: 4px; }
+  .dead { color: #ff4a3a; font-size: 44px; font-weight: bold; }
+</style>
+<script type="importmap">{"imports": {"three": "./vendor/three.min.js"}}</script>
+</head>
+<body>
+<canvas id="scene"></canvas>
+
+<div id="hud">
+  <div id="wantedBox" class="panel"><div id="stars">☆☆☆☆☆</div><div id="districtName">MARINA ROW</div><div>REP: <span id="repName">ROOKIE</span></div></div>
+  <div id="objectiveBox" class="panel"><div id="objective">—</div><div id="objTimer">—</div></div>
+  <div id="cashBox" class="panel"><div id="cash">$500</div><div id="chain">CHAIN x1.0</div><div id="speedo">0 mph</div></div>
+  <div id="mapBox"><canvas id="minimap" width="150" height="150"></canvas><div id="dispatch" class="panel">NO UNITS IN PURSUIT</div></div>
+  <div id="gearBox" class="panel"><div>RADIO: <span id="radioName">SUNSET FM</span> (R)</div><div>WEAPON: <span id="weaponName">PISTOL</span> (Q/F)</div><button id="btn-sound">SOUND: ON</button></div>
+  <div id="toast"></div>
+  <div id="dialogue"></div>
+</div>
+
+<div id="screen-title" class="screen"><div class="card">
+  <h1>SOLMAR: SUNSET GETAWAY</h1>
+  <div class="tagline">STEAL THE CAR. OUTRUN THE LAW. OWN THE NIGHT.</div>
+  <div class="chainline">EVERY NEAR-MISS FEEDS THE CHAIN</div>
+  <div class="counts" id="counts">4 DISTRICTS — 12 MISSIONS — 6 CARS — 12 PERKS</div>
+  <div class="howto">
+    <div><b>GOAL:</b> Run all 12 story missions as Milo Vane, courier of Solmar.</div>
+    <div><b>WIN:</b> Finish the final heist and beat Marcus Voss. Grade S needs $90,000.</div>
+    <div><b>LOSE:</b> Wasted by police fire, or busted at wanted level 5.</div>
+    <div><b>HOW:</b> 1. Walk with WASD, hold E to hotwire a car. 2. Drive, dodge, near-miss for chain cash. 3. Pick 1 of 3 crew perks after each mission.</div>
+  </div>
+  <div class="slots"><div id="slot-0">SAVE 1 — EMPTY SLOT</div><div id="slot-1">SAVE 2 — EMPTY SLOT</div><div id="slot-2">SAVE 3 — EMPTY SLOT</div><div>DIFFICULTY: EASY — NORMAL — HARD</div></div>
+  <button id="btn-start" class="bigbtn">START</button>
+</div></div>
+
+<div id="screen-pause" class="screen hidden"><div class="card">
+  <h1>PAUSED</h1><p>Solmar waits. Press P to keep driving.</p>
+</div></div>
+
+<div id="screen-wasted" class="screen hidden"><div class="card">
+  <div class="dead">WASTED</div><p>Milo went down in the streets of Solmar.</p><p>Press START to try again.</p>
+</div></div>
+
+<div id="screen-busted" class="screen hidden"><div class="card">
+  <div class="dead">BUSTED</div><p>Captain Rook's units took Milo in.</p><p>Press START to try again.</p>
+</div></div>
+
+<div id="screen-draft" class="screen hidden"><div class="card">
+  <h1>CHOOSE A CREW PERK — PICK 1 OF 3</h1>
+  <div class="perkrow">
+    <div class="perk"><b>NITRO RIG</b><br>Nitro lasts twice as long.</div>
+    <div class="perk"><b>ARMOR PLATE</b><br>Car takes half damage.</div>
+    <div class="perk"><b>GHOST PLATES</b><br>Wanted fades twice as fast.</div>
+  </div>
+  <p>Draft 1 of 3 after every mission. 12 perks in the deck.</p>
+</div></div>
+
+<div id="screen-victory" class="screen hidden"><div class="card">
+  <h1>SOLMAR IS YOURS</h1><div class="tagline">GRADE A — VOSS IS DONE. THE NIGHT IS YOURS.</div>
+  <div class="stats">
+    <div>CASH: <span id="v-cash">—</span></div><div>MISSIONS: <span id="v-missions">—</span></div>
+    <div>CARS STOLEN: <span id="v-stolen">—</span></div><div>COPS EVADED: <span id="v-evaded">—</span></div>
+    <div>NEAR MISSES: <span id="v-near">—</span></div><div>BEST CHAIN: <span id="v-chain">—</span></div>
+    <div>REP: <span id="v-rep">—</span></div><div>TIME: <span id="v-time">—</span></div>
+  </div>
+  <p>Grades from real run stats: S $90,000 — A $60,000 — B $40,000.</p>
+</div></div>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
