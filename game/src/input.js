@@ -11,6 +11,7 @@ const KEYMAP = {
   ShiftLeft: "run", ShiftRight: "run",
   KeyE: "enter", KeyF: "fire", KeyQ: "wheel",
   KeyR: "radio", KeyM: "map", KeyP: "pause",
+  KeyB: "garage", KeyT: "stats", KeyL: "save", KeyO: "load",
   Escape: "pause", Space: "nitro", Enter: "confirm",
   Digit1: "choice1", Digit2: "choice2", Digit3: "choice3",
   KeyG: "gig",

@@ -150,6 +150,14 @@ function pay(state, amount, why) {
 function completeMission(runner, state) {
   const m = CONFIG.missions[state.missionIndex];
   if (!m) return;
+  // Letter grade from the real run: clean getaways earn A, the
+  // heist earns S with Milo healthy, the race grades on the clock.
+  const g = runner.gradeOverride
+    || (m.id === "m10" ? ((state.hp ?? 100) >= 70 ? "S" : state.wanted <= 1 ? "A" : "B")
+    : state.wanted === 0 ? "A" : "B");
+  if (!state.grades) state.grades = Array(12).fill(null);
+  state.grades[state.missionIndex] = g;
+  runner.gradeOverride = null;
   pay(state, m.pay, "mission");
   state.rep = (state.rep || 0) + 120;
   state.toast = `MISSION COMPLETE — ${m.name} +$${m.pay.toLocaleString("en-US")}`;
@@ -234,7 +242,10 @@ export function updateMission(runner, state, dt, pos) {
       if (runner.checkpoint >= RACE_POINTS.length) {
         const rivalBest = Math.min(...runner.rivalTime);
         const myTime = m.limit - runner.timer;
-        if (myTime <= rivalBest) completeMission(runner, state);
+        if (myTime <= rivalBest) {
+          runner.gradeOverride = myTime <= rivalBest - 5 ? "S" : "A";
+          completeMission(runner, state);
+        }
         else failMission(runner, state, "RIVALS BEAT YOU");
         return;
       }

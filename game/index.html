@@ -31,6 +31,19 @@
   #hotwireBox { position: absolute; left: 50%; bottom: 150px; transform: translateX(-50%); color: #ffd23a; text-align: center; }
   #nitro { color: #7ab8ff; font-size: 11px; }
   #nitroFill { letter-spacing: 1px; }
+  #units { color: #ffd23a; font-size: 11px; margin-top: 4px; }
+  #hpBox { position: absolute; left: 10px; top: 110px; font-size: 11px; }
+  .bar { width: 130px; height: 8px; background: #33272a; border: 1px solid #6b4a2e; border-radius: 4px; margin-top: 2px; }
+  .bar > div { height: 100%; background: #7dd87d; border-radius: 3px; }
+  #repFill { background: #ff7ad9; }
+  #bossBox { margin-top: 4px; color: #ff4a3a; }
+  #bossFill { background: #ff4a3a; }
+  #standoff { position: absolute; left: 50%; top: 90px; transform: translateX(-50%); color: #ff4a3a;
+    font-size: 20px; font-weight: bold; text-shadow: 0 2px 4px #000; }
+  .grow { background: #241b34; padding: 6px 8px; border-radius: 4px; margin: 5px 0; text-align: left; font-size: 12px; }
+  .grow button { cursor: pointer; background: #2a2118; color: #f2ead8; border: 1px solid #6b4a2e; padding: 2px 7px; margin-left: 4px; }
+  .saveRow { margin-top: 8px; }
+  .saveRow button { cursor: pointer; background: #2a2118; color: #f2ead8; border: 1px solid #6b4a2e; padding: 4px 8px; margin: 2px; }
   .screen { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
     background: rgba(10, 8, 18, 0.82); z-index: 5; }
   .card { max-width: 640px; width: 92%; background: #1a1426; border: 2px solid #b5763a; border-radius: 10px; padding: 22px; text-align: center; }
@@ -56,11 +69,13 @@
 <canvas id="scene"></canvas>
 
 <div id="hud">
-  <div id="wantedBox" class="panel"><div id="stars">☆☆☆☆☆</div><div id="districtName">MARINA ROW</div><div>REP: <span id="repName">ROOKIE</span></div></div>
-  <div id="objectiveBox" class="panel"><div id="objective">—</div><div id="objTimer">—</div></div>
+  <div id="wantedBox" class="panel"><div id="stars">☆☆☆☆☆</div><div id="districtName">MARINA ROW</div><div>REP: <span id="repName">ROOKIE</span></div><div class="bar"><div id="repFill" style="width:0%"></div></div></div>
+  <div id="hpBox" class="panel">MILO HP<div class="bar"><div id="hpFill" style="width:100%"></div></div></div>
+  <div id="objectiveBox" class="panel"><div id="objective">—</div><div id="objTimer">—</div><div id="bossBox" class="hidden">MARCUS VOSS<div class="bar"><div id="bossFill" style="width:100%"></div></div></div></div>
+  <div id="standoff" class="hidden"></div>
   <div id="cashBox" class="panel"><div id="cash">$500</div><div id="chain">CHAIN x1.0</div><div id="speedo">0 mph</div><div id="nitro">NITRO <span id="nitroFill">██████████</span></div></div>
   <div id="hotwireBox" class="panel hidden"><div>HOTWIRE — HOLD E</div><div id="hotwireFill">▓▓▓▓▓▓▓▓▓▓</div></div>
-  <div id="mapBox"><canvas id="minimap" width="150" height="150"></canvas><div id="dispatch" class="panel">NO UNITS IN PURSUIT</div></div>
+  <div id="mapBox"><canvas id="minimap" width="150" height="150"></canvas><div id="dispatch" class="panel">NO UNITS IN PURSUIT</div><div id="units" class="panel">—</div></div>
   <div id="gearBox" class="panel"><div>RADIO: <span id="radioName">SUNSET FM</span> (R)</div><div>WEAPON: <span id="weaponName">PISTOL</span> (Q/F)</div><button id="btn-sound">SOUND: ON</button></div>
   <div id="toast"></div>
   <div id="dialogue"></div>
@@ -76,13 +91,31 @@
     <div><b>WIN:</b> Finish the final heist and beat Marcus Voss. Grade S needs $90,000.</div>
     <div><b>LOSE:</b> Wasted by police fire, or busted at wanted level 5.</div>
     <div><b>HOW:</b> 1. Walk with WASD, hold E to hotwire a car. 2. Drive, dodge, near-miss for chain cash. 3. Pick 1 of 3 crew perks after each mission.</div>
+    <div><b>KEYS:</b> B garage, T stats, Q weapon, F fire, L save, O load, R radio.</div>
   </div>
   <div class="slots"><div id="slot-0">SAVE 1 — EMPTY SLOT</div><div id="slot-1">SAVE 2 — EMPTY SLOT</div><div id="slot-2">SAVE 3 — EMPTY SLOT</div><div>DIFFICULTY: EASY — NORMAL — HARD</div></div>
   <button id="btn-start" class="bigbtn">START</button>
 </div></div>
 
 <div id="screen-pause" class="screen hidden"><div class="card">
-  <h1>PAUSED</h1><p>Solmar waits. Press P to keep driving.</p>
+  <h1>PAUSED</h1><p>Solmar waits. Press P to keep driving. B opens the garage, T the stats.</p>
+  <div class="saveRow"><button id="btn-save-0">SAVE 1</button><button id="btn-save-1">SAVE 2</button><button id="btn-save-2">SAVE 3</button></div>
+  <div class="saveRow"><button id="btn-load-0">LOAD 1</button><button id="btn-load-1">LOAD 2</button><button id="btn-load-2">LOAD 3</button></div>
+</div></div>
+
+<div id="screen-garage" class="screen hidden"><div class="card">
+  <h1>GARAGE — SOLMAR MOTORS</h1>
+  <div>CASH: <span id="garageCash">$500</span> — chop shop fences a car for 40% of its price.</div>
+  <div id="garageRows"></div>
+  <p>Press B or the button below to drive away.</p>
+  <button id="btn-garage-close" class="bigbtn">DRIVE AWAY</button>
+</div></div>
+
+<div id="screen-stats" class="screen hidden"><div class="card">
+  <h1>CAREER STATS</h1>
+  <div class="stats" id="statsGrid"></div>
+  <p>Grades are earned from real runs: clean getaways earn A, the heist earns S with Milo healthy.</p>
+  <button id="btn-stats-close" class="bigbtn">BACK</button>
 </div></div>
 
 <div id="screen-wasted" class="screen hidden"><div class="card">
