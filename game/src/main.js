@@ -14,7 +14,7 @@ import { createTraffic, updateTraffic } from "./traffic.js";
 import { createPedestrians, updatePedestrians } from "./pedestrians.js";
 import {
   createRunner, startMission, updateMission,
-  chooseBranch, pickPerk, startGig,
+  chooseBranch, pickPerk, startGig, makeDraft,
 } from "./missions.js";
 import { createPolice, activateFor, activeUnits, placeUnit, refreshDist, updatePolice } from "./police.js";
 import { cycleWeapon, fireTick, policeFire, startStandoff, updateStandoff, buyWeapon } from "./combat.js";
@@ -23,6 +23,7 @@ import { createAudio } from "./audio.js";
 import { saveGame, loadGame, slotLabel } from "./save.js";
 import { ensureGarage, buyCar, equipCar, sellCar, buyUpgrade } from "./garage.js";
 import { syncHud, toastTick, showStats, renderGarage } from "./hud.js";
+import { runSim } from "./sim.js";
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -48,6 +49,8 @@ const state = {
   feats: new Set(), standoff: null, soundOn: true, lastSavedMissions: 0,
   garage: { owned: ["comet"], equipped: "comet", upgrades: { comet: { engine: 0, brakes: 0, nos: 0 } } },
   stats: { stolen: 0, evaded: 0, nearMiss: 0, bestChain: 1.0, earned: 0, missionsDone: 0, gigsDone: 0 },
+  safehouse: { visits: 0, last: 0 },
+  sim: null, dayT: 0,
 };
 const runner = createRunner(rng);
 state.runner = runner;
@@ -70,7 +73,7 @@ state.police = [];
 
 function showScreen(name) {
   state.screen = name;
-  for (const id of ["title", "pause", "wasted", "busted", "draft", "victory", "garage", "stats"]) {
+  for (const id of ["title", "pause", "wasted", "busted", "draft", "victory", "garage", "stats", "safehouse"]) {
     $(`screen-${id}`).classList.toggle("hidden", id !== name);
   }
   $("hud").classList.toggle("hidden", name === "title");
@@ -210,6 +213,74 @@ function stageShot(name) {
     state.police = [];
     renderGarage(state);
     showScreen("garage");
+  } else if (name === "draft") {
+    // Perk draft: mission 1 banked, pick 1 of 3 crew perks.
+    state.mode = "foot";
+    state.x = spawn.x; state.z = spawn.z; state.heading = spawn.heading;
+    state.missionIndex = 1;
+    state.grades[0] = "B";
+    state.stats.missionsDone = 1;
+    state.stats.earned = 1500;
+    state.cash = 2000;
+    milo.visible = true;
+    milo.position.set(state.x, 0, state.z);
+    activateFor(pol, 0);
+    state.police = [];
+    makeDraft(runner, state);
+    showScreen("draft");
+  } else if (name === "victory") {
+    // VICTORY grade A from real run stats: 12/12, $65,400 earned.
+    state.mode = "chase";
+    state.missionIndex = 12;
+    state.grades = Array(12).fill("A");
+    state.stats = { stolen: 3, evaded: 4, nearMiss: 31, bestChain: 4.5, earned: 65400, missionsDone: 12, gigsDone: 9 };
+    state.cash = 65900;
+    state.rep = 2600;
+    state.dayT = 1;
+    state.day = 1;
+    milo.visible = false;
+    activateFor(pol, 0);
+    state.police = [];
+    state.grade = "A";
+    state.screen = "victory";
+    showScreen("victory");
+  } else if (name === "radio") {
+    // Radio night drive: NEON WAVE on Neon Boulevard, wanted 3.
+    const roadster = parked[5];
+    state.car = takeCar(roadster);
+    state.car.x = 160; state.car.z = 200; state.car.heading = 0;
+    state.car.mesh.position.set(160, 0, 200);
+    state.mode = "chase";
+    state.day = 1;
+    state.x = 160; state.z = 200; state.heading = 0;
+    state.wanted = 3; state.chain = 3.0; state.cash = 31200; state.speed = 64;
+    state.car.speed = 64;
+    state.radio = 1;
+    state.objective = { x: 240, z: 280 };
+    state.toast = "NEON WAVE — 122 BPM";
+    state.missionIndex = 3;
+    milo.visible = false;
+    activateFor(pol, 3);
+    placeUnit(pol, "KITE-1", 160, 224);
+    placeUnit(pol, "CRUISER-2", 160, 248);
+    placeUnit(pol, "VIPER-1", 180, 200);
+    placeUnit(pol, "HAWK-1", 140, 180);
+    refreshDist(pol, state.x, state.z);
+    state.police = activeUnits(pol);
+    showScreen("play");
+  } else if (name === "safehouse") {
+    // Safehouse: Milo on foot at the Dockside garage hub.
+    state.mode = "foot";
+    state.x = -280; state.z = 272; state.heading = 0;
+    state.cash = 12400;
+    state.missionIndex = 4;
+    state.safehouse.visits = 1;
+    milo.visible = true;
+    milo.position.set(state.x, 0, state.z);
+    activateFor(pol, 0);
+    state.police = [];
+    state.toast = "SAFEHOUSE — GARAGE HUB, SAVE POINT";
+    showScreen("safehouse");
   } else if (name === "drive") {
     // Probe-only scene: Milo driving, traffic and pedestrians live.
     const comet = parked[0];
@@ -375,6 +446,16 @@ function step(dt) {
     if (wasPressed("gig") && !runner.gig && state.missionIndex < CONFIG.missions.length) {
       startGig(runner, state, "parcel");
     }
+    // Safehouse: on foot within 10 m of the Dockside hub, step
+    // inside — garage hub and save point, autosaves slot 1.
+    if (state.mode === "foot" && state.screen === "play"
+      && Math.hypot(state.x + 280, state.z - 280) < 10 && !state.standoff) {
+      state.safehouse.visits += 1;
+      state.safehouse.last = Math.round(state.time);
+      state.toast = "SAFEHOUSE — GARAGE HUB, SAVE POINT";
+      if (saveGame(state, runner, 0)) refreshSlots();
+      showScreen("safehouse");
+    }
     // Autosave slot 1 whenever a mission is banked.
     if (state.stats.missionsDone !== state.lastSavedMissions) {
       state.lastSavedMissions = state.stats.missionsDone;
@@ -414,6 +495,11 @@ function step(dt) {
     if (d) { relinkCar(d); state.toast = "LOADED — SLOT 1"; refreshSlots(); }
     else state.toast = "SLOT 1 EMPTY";
   }
+  // Sunset to night: the day cycle lerps with run time, 0 at
+  // dawn of the run, 1 after 600 s of play; staged night shots
+  // hold day 1. Lamps and the fog tint follow in render.js.
+  state.dayT = Math.max(state.day || 0, Math.min(1, state.time / 600));
+  view.setDay(state.dayT);
   view.frame({ x: state.x, z: state.z, heading: state.heading, mode: state.mode });
   syncHud(state, runner, pol);
   toastTick(state, dt);
@@ -498,6 +584,14 @@ function boot() {
     renderGarage(state);
   });
   $("btn-garage-close").addEventListener("click", () => showScreen("play"));
+  $("btn-safe-save").addEventListener("click", () => { if (saveGame(state, runner, 0)) { state.toast = "SAVED AT THE SAFEHOUSE — SLOT 1"; refreshSlots(); } });
+  $("btn-safe-garage").addEventListener("click", () => { renderGarage(state); showScreen("garage"); });
+  $("btn-safe-leave").addEventListener("click", () => {
+    // Step out clear of the door so the hub does not pull Milo back in.
+    state.x = -260; state.z = 260;
+    milo.position.set(state.x, 0, state.z);
+    showScreen("play");
+  });
   $("btn-stats-close").addEventListener("click", () => showScreen("play"));
   for (let i = 0; i < 3; i++) {
     $(`draft-${i}`).addEventListener("click", () => { if (pickPerk(runner, state, i)) showScreen(state.screen); });
@@ -532,5 +626,8 @@ function boot() {
 }
 
 window.__solmar = state;
+window.__solmar.sim = (seed = 1) => runSim({
+  state, runner, pol, traffic, parked, city, milo, view, collide,
+}, seed);
 window.__shotReady = false;
 boot();

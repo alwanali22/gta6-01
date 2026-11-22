@@ -1,7 +1,7 @@
 // Rendering: three.js sunset scene, day-to-night light, chase camera
 // and the 2D minimap. No asset files — sky, sun and lamps are code.
 import * as THREE from "three";
-import { CONFIG } from "./config.js";
+import { CONFIG, districtAt } from "./config.js";
 
 const SUNSET = { sky: 0x4a2540, fog: 0x6b4a3e, sun: 0xffb27a, sunI: 1.7, hemi: 0x7a5a8a };
 const NIGHT = { sky: 0x0a0e22, fog: 0x0d1426, sun: 0x8aa8ff, sunI: 0.5, hemi: 0x2a3550 };
@@ -49,7 +49,11 @@ export function createView(canvas) {
   }
 
   // Chase camera: behind the focus point, looking slightly ahead.
+  // Per-district accent: the fog leans toward the district's sky
+  // colour, so each quarter of Solmar reads differently.
   function frame(focus) {
+    const d = districtAt(focus.x, focus.z);
+    scene.fog.color.lerp(new THREE.Color(d.sky), 0.06);
     const dist = focus.mode === "chase" ? CONFIG.camera.chaseDist : CONFIG.camera.footDist;
     const height = focus.mode === "chase" ? CONFIG.camera.chaseHeight : CONFIG.camera.footHeight;
     const fx = Math.sin(focus.heading);

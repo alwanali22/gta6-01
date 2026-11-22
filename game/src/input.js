@@ -36,6 +36,18 @@ export function isHeld(name) {
   return held.has(name);
 }
 
+// The autopilot drives through the same keys a player holds:
+// inject("up", true) is a held W until inject("up", false).
+export function inject(name, on) {
+  if (on) held.add(name);
+  else held.delete(name);
+}
+
+export function clearInput() {
+  held.clear();
+  pressed.clear();
+}
+
 export function wasPressed(name) {
   return pressed.has(name);
 }

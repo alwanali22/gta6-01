@@ -40,6 +40,10 @@ export function collect(state, runner) {
     soundOn: state.soundOn !== false,
     act: actOf(state.missionIndex), percent: percentOf(state),
     district: districtAt(state.x, state.z).name,
+    // Chunk D: safehouse visits, day-cycle position, last sim.
+    safehouse: { ...(state.safehouse || { visits: 0, last: 0 }) },
+    dayT: state.dayT || 0,
+    sim: state.sim ? { ...state.sim, perMission: undefined } : null,
   };
 }
 
@@ -77,6 +81,9 @@ export function loadGame(state, runner, i) {
   };
   state.x = d.x; state.z = d.z; state.heading = d.heading; state.mode = d.mode;
   state.soundOn = d.soundOn !== false;
+  state.safehouse = d.safehouse ? { ...d.safehouse } : { visits: 0, last: 0 };
+  state.dayT = d.dayT || 0;
+  state.sim = d.sim ? { ...d.sim } : null;
   Object.assign(runner, d.runner);
   runner.target = d.runner.target ? { ...d.runner.target } : null;
   state.bossHp = d.runner.bossHp;

@@ -150,6 +150,20 @@ export function buildCity(THREE, rng) {
   group.add(box(THREE, 15, 2, 15, 0xffd27a, 240, 53, -240, 0x664411));
   group.add(box(THREE, 46, 2.5, 2.5, 0xff7ad9, 120, 12, 280, 0x881155));
 
+  // Per-district accents: one tall sign per district, lit in its
+  // accent colour, so the quarters read apart at a glance.
+  for (const d of CONFIG.districts) {
+    const cx = (d.x0 + d.x1) / 2, cz = (d.z0 + d.z1) / 2;
+    const accent = parseInt(d.accent.slice(1), 16);
+    group.add(box(THREE, 3, 16, 3, 0x2a2a2a, cx + 30, 8, cz - 30));
+    group.add(box(THREE, 8, 4, 1, accent, cx + 30, 17, cz - 30, accent));
+  }
+
+  // Safehouse: Milo's garage hub and save point, Dockside corner.
+  group.add(box(THREE, 18, 8, 12, 0x6b4a2e, -280, 4, 280, 0x221100));
+  group.add(box(THREE, 10, 3, 1, 0xffd23a, -280, 9, 274, 0x664411));
+  group.add(box(THREE, 6, 4, 1, 0x7dd87d, -274, 2, 274, 0x113311));
+
   // Street lamps at every other intersection, warm glow, no lights.
   for (let x = -240; x <= 240; x += 80) {
     for (let z = -240; z <= 240; z += 80) {
