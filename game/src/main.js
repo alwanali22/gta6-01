@@ -1,11 +1,21 @@
-// Boot + loop + on-foot play + staged shots. Chunk A owns the world
-// and the frame; driving, missions, police and combat arrive in B/C.
+// Boot + loop + on-foot play + driving + missions. Chunk B wires
+// player.js, vehicles.js, traffic.js, pedestrians.js and
+// missions.js into the Chunk A frame: hotwire a parked car, drive
+// it, dodge traffic, bank near-miss cash, and run all 12 missions.
 import * as THREE from "three";
 import { CONFIG, districtAt, respectRank, missionPayTotal } from "./config.js";
 import { makeRng } from "./random.js";
-import { buildCity, playerSpawn, carSpawn } from "./city.js";
+import { buildCity, playerSpawn } from "./city.js";
 import { bindInput, isHeld, wasPressed, driveAxis, endFrame } from "./input.js";
 import { createView, drawMinimap } from "./render.js";
+import { createWalker, footStep, hotwireTick, exitCar } from "./player.js";
+import { buildCarMesh, createParkedCars, nearestParked, driveStep, takeCar } from "./vehicles.js";
+import { createTraffic, updateTraffic } from "./traffic.js";
+import { createPedestrians, updatePedestrians } from "./pedestrians.js";
+import {
+  createRunner, startMission, updateMission, missionHud,
+  chooseBranch, pickPerk, startGig,
+} from "./missions.js";
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -16,59 +26,32 @@ const view = createView($("scene"));
 const city = buildCity(THREE, rng);
 view.scene.add(city.group);
 
+const chainObj = { value: 1.0, timer: 0 };
 const state = {
   x: 0, z: 0, heading: 0, mode: "foot", speed: 0,
   cash: CONFIG.economy.startCash, wanted: 0, chain: 1.0, rep: 0,
   day: 0, time: 0, missionIndex: 0, radio: 0, weapon: 0,
   objective: null, police: [], screen: "title", ready: false,
   buildings: city.buildings, missionPay: missionPayTotal(),
+  perks: new Set(), draft: null, grade: null, bossHp: 100,
+  missionTimer: 0, hotwire: { progress: 0, need: 2.5, target: null },
+  car: null, toast: "", dialogue: "",
+  stats: { stolen: 0, evaded: 0, nearMiss: 0, bestChain: 1.0, earned: 0, missionsDone: 0, gigsDone: 0 },
 };
+const runner = createRunner(rng);
+state.runner = runner;
 
-// Milo on foot: jacket body, head, legs — readable at minimap zoom.
-const milo = new THREE.Group();
-const body = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.55, 1.5, 8),
-  new THREE.MeshLambertMaterial({ color: 0xd8402e }));
-body.position.y = 1.1;
-milo.add(body);
-const head = new THREE.Mesh(new THREE.SphereGeometry(0.36, 10, 8),
-  new THREE.MeshLambertMaterial({ color: 0xd8a075 }));
-head.position.y = 2.2;
-milo.add(head);
+const milo = createWalker();
 view.scene.add(milo);
+const parked = createParkedCars(THREE, view.scene, rng);
+state.parked = parked;
+const traffic = createTraffic(THREE, view.scene, rng);
+state.traffic = traffic;
+const walkers = createPedestrians(THREE, view.scene, CONFIG.seed);
+state.walkers = walkers;
 
-// Stand-in cars for staged shots; chunk B replaces these with vehicles.js.
-function makeCar(color, police = false) {
-  const g = new THREE.Group();
-  const paint = police ? 0x1a2a44 : color;
-  const hull = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.7, 4.4),
-    new THREE.MeshLambertMaterial({ color: paint }));
-  hull.position.y = 0.55;
-  g.add(hull);
-  const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.6, 2.2),
-    new THREE.MeshLambertMaterial({ color: police ? 0xd8dee8 : 0x1a1a22 }));
-  cabin.position.set(0, 1.2, -0.2);
-  g.add(cabin);
-  const wheelG = new THREE.CylinderGeometry(0.42, 0.42, 0.3, 10);
-  const wheelM = new THREE.MeshLambertMaterial({ color: 0x111111 });
-  for (const [wx, wz] of [[-1, 1.5], [1, 1.5], [-1, -1.5], [1, -1.5]]) {
-    const w = new THREE.Mesh(wheelG, wheelM);
-    w.rotation.z = Math.PI / 2;
-    w.position.set(wx, 0.42, wz);
-    g.add(w);
-  }
-  if (police) {
-    const bar = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.25, 0.5),
-      new THREE.MeshLambertMaterial({ color: 0xff2a2a, emissive: 0x881111 }));
-    bar.position.set(0, 1.65, -0.2);
-    g.add(bar);
-  }
-  return g;
-}
-
-const playerCar = makeCar(CONFIG.cars[2].color);
-playerCar.visible = false;
-view.scene.add(playerCar);
-const copCars = [makeCar(0, true), makeCar(0, true), makeCar(0, true)];
+// Police stand-ins for staged shots; live pursuit arrives in C.
+const copCars = [buildCarMesh(THREE, 0, true), buildCarMesh(THREE, 0, true), buildCarMesh(THREE, 0, true)];
 for (const c of copCars) { c.visible = false; view.scene.add(c); }
 
 function showScreen(name) {
@@ -77,6 +60,18 @@ function showScreen(name) {
     $(`screen-${id}`).classList.toggle("hidden", id !== name);
   }
   $("hud").classList.toggle("hidden", name === "title");
+  if (name === "victory") {
+    $("v-cash").textContent = "$" + state.cash.toLocaleString("en-US");
+    $("v-missions").textContent = `${state.stats.missionsDone}/12`;
+    $("v-stolen").textContent = String(state.stats.stolen);
+    $("v-evaded").textContent = String(state.stats.evaded);
+    $("v-near").textContent = String(state.stats.nearMiss);
+    $("v-chain").textContent = "x" + state.stats.bestChain.toFixed(1);
+    $("v-rep").textContent = respectRank(state.rep).name;
+    $("v-time").textContent = `${Math.floor(state.time / 60)}:${String(Math.floor(state.time % 60)).padStart(2, "0")}`;
+    const tag = document.querySelector("#screen-victory .tagline");
+    if (tag) tag.textContent = `GRADE ${state.grade || "C"} — VOSS IS DONE. THE NIGHT IS YOURS.`;
+  }
 }
 
 function starsText(n) {
@@ -92,14 +87,35 @@ function syncHud() {
   $("repName").textContent = respectRank(state.rep).name;
   $("radioName").textContent = CONFIG.radio[state.radio].name;
   $("weaponName").textContent = CONFIG.weapons[state.weapon].name;
-  const m = CONFIG.missions[state.missionIndex];
-  $("objective").textContent = m ? `${m.name} — ${m.brief}` : "FREE ROAM — SOLMAR IS YOURS";
-  $("objTimer").textContent = state.wanted > 0 ? "LOSE: BUSTED OR WASTED" : "LOSE: MISSION FAILED";
+  const hud = missionHud(runner, state);
+  $("objective").textContent = hud.objective;
+  $("objTimer").textContent = hud.timer;
   $("dispatch").textContent = state.police.length
     ? `UNITS IN PURSUIT: ${state.police.length} — ${state.police.map((u) => u.kind).join(", ")}`
     : "NO UNITS IN PURSUIT";
   $("toast").textContent = state.toast || "";
+  const m = CONFIG.missions[state.missionIndex];
   $("dialogue").textContent = m ? `NADIA: "${m.line}"` : "";
+  const nitro = state.car ? Math.round(state.car.nitro) : 100;
+  $("nitroFill").textContent = "█".repeat(Math.round(nitro / 10)) + "░".repeat(10 - Math.round(nitro / 10));
+  const hw = state.hotwire;
+  const hwBox = $("hotwireBox");
+  if (state.mode === "foot" && hw && hw.target && hw.progress > 0) {
+    hwBox.classList.remove("hidden");
+    const filled = Math.round((hw.progress / hw.need) * 10);
+    $("hotwireFill").textContent = "▓".repeat(filled) + "░".repeat(10 - filled);
+  } else if (state.mode === "foot" && hw && hw.target) {
+    hwBox.classList.remove("hidden");
+    $("hotwireFill").textContent = "HOLD E — " + hw.target.spec.name;
+  } else {
+    hwBox.classList.add("hidden");
+  }
+  if (state.draft) {
+    state.draft.options.forEach((p, i) => {
+      const el = $(`draft-${i}`);
+      if (el) el.innerHTML = `<b>${p.name}</b><br>${p.text}`;
+    });
+  }
   drawMinimap($("minimap"), state);
 }
 
@@ -114,12 +130,31 @@ function slotLabel(i) {
   }
 }
 
+function placeCops(list) {
+  list.forEach((c, i) => {
+    if (i >= copCars.length) return;
+    copCars[i].visible = true;
+    copCars[i].position.set(c.x, 0, c.z);
+    copCars[i].rotation.y = state.heading;
+  });
+}
+
 function stageShot(name) {
   const spawn = playerSpawn();
+  // Staged shots freeze the player + mission logic so the HUD
+  // values the shot promises (speed, chain, wanted) do not decay
+  // while the screenshot is taken. The drive probe scene is live.
+  state.staged = name !== "drive";
   if (name === "cover") {
+    const spyder = parked[2];
+    state.car = takeCar(spyder);
+    state.car.x = -120; state.car.z = -160; state.car.heading = -Math.PI / 2;
+    state.car.mesh.position.set(-120, 0, -160);
+    state.car.mesh.rotation.y = state.car.heading;
     state.mode = "chase";
     state.x = -120; state.z = -160; state.heading = -Math.PI / 2;
     state.wanted = 5; state.chain = 2.0; state.cash = 12450; state.speed = 87;
+    state.car.speed = 87;
     state.police = [
       { kind: "CRUISER", x: -142, z: -164 }, { kind: "CRUISER", x: -142, z: -156 },
       { kind: "INTERCEPTOR", x: -160, z: -160 },
@@ -127,24 +162,23 @@ function stageShot(name) {
     state.objective = { x: -290, z: -160 };
     state.toast = "NEAR MISS +250";
     state.missionIndex = 0;
-    playerCar.visible = true;
-    playerCar.position.set(state.x, 0, state.z);
-    playerCar.rotation.y = state.heading;
-    copCars[0].position.set(-142, 0, -164); copCars[0].rotation.y = state.heading;
-    copCars[1].position.set(-142, 0, -156); copCars[1].rotation.y = state.heading;
-    copCars[2].position.set(-160, 0, -160); copCars[2].rotation.y = state.heading;
-    copCars[0].visible = copCars[1].visible = copCars[2].visible = true;
     milo.visible = false;
+    placeCops(state.police);
     showScreen("play");
   } else if (name === "title") {
     state.mode = "foot";
     state.x = spawn.x; state.z = spawn.z; state.heading = Math.PI / 2;
     showScreen("title");
   } else if (name === "night") {
+    const roadster = parked[5];
+    state.car = takeCar(roadster);
+    state.car.x = 160; state.car.z = 200; state.car.heading = 0;
+    state.car.mesh.position.set(160, 0, 200);
     state.mode = "chase";
     state.day = 1;
     state.x = 160; state.z = 200; state.heading = 0;
     state.wanted = 3; state.chain = 3.0; state.cash = 31200; state.speed = 64;
+    state.car.speed = 64;
     state.police = [
       { kind: "CRUISER", x: 160, z: 224 }, { kind: "CRUISER", x: 160, z: 248 },
       { kind: "AIR UNIT", x: 140, z: 180, heli: true },
@@ -152,50 +186,137 @@ function stageShot(name) {
     state.objective = { x: 240, z: 280 };
     state.toast = "AIR UNIT DEPLOYED";
     state.missionIndex = 3;
-    playerCar.visible = true;
-    playerCar.position.set(state.x, 0, state.z);
-    playerCar.rotation.y = state.heading;
-    copCars[0].position.set(160, 0, 224); copCars[0].rotation.y = state.heading;
-    copCars[1].position.set(160, 0, 248); copCars[1].rotation.y = state.heading;
-    copCars[0].visible = copCars[1].visible = true;
+    milo.visible = false;
+    placeCops(state.police);
+    showScreen("play");
+  } else if (name === "drive") {
+    // Probe-only scene: Milo driving, traffic and pedestrians live.
+    const comet = parked[0];
+    state.car = takeCar(comet);
+    state.car.x = 0; state.car.z = -80; state.car.heading = 0;
+    state.car.mesh.position.set(0, 0, -80);
+    state.car.speed = 54;
+    state.mode = "chase";
+    state.x = 0; state.z = -80; state.heading = 0;
+    state.wanted = 2; state.chain = 1.5; state.speed = 54;
+    state.missionIndex = 1;
+    startMission(runner, state);
     milo.visible = false;
     showScreen("play");
   } else {
     // marina (default): Milo on foot by the pier, first mission live.
     state.mode = "foot";
     state.x = spawn.x; state.z = spawn.z; state.heading = spawn.heading;
-    state.objective = { x: -290, z: -160 };
     state.missionIndex = 0;
+    startMission(runner, state);
     showScreen("play");
   }
   view.setDay(state.day);
 }
 
-function collide(x, z) {
+function collide(x, z, radius = 0.6) {
+  let hit = false;
   for (const s of city.solids) {
-    if (Math.abs(x - s.x) < s.hx + 0.6 && Math.abs(z - s.z) < s.hz + 0.6) {
-      const dx = s.hx + 0.6 - Math.abs(x - s.x);
-      const dz = s.hz + 0.6 - Math.abs(z - s.z);
-      if (dx < dz) x = s.x + Math.sign(x - s.x || 1) * (s.hx + 0.6);
-      else z = s.z + Math.sign(z - s.z || 1) * (s.hz + 0.6);
+    if (Math.abs(x - s.x) < s.hx + radius && Math.abs(z - s.z) < s.hz + radius) {
+      hit = true;
+      const dx = s.hx + radius - Math.abs(x - s.x);
+      const dz = s.hz + radius - Math.abs(z - s.z);
+      if (dx < dz) x = s.x + Math.sign(x - s.x || 1) * (s.hx + radius);
+      else z = s.z + Math.sign(z - s.z || 1) * (s.hz + radius);
     }
   }
   x = Math.max(-318, Math.min(318, x));
   z = Math.max(-318, Math.min(318, z));
-  return [x, z];
+  return [x, z, hit];
 }
 
 function step(dt) {
-  if (state.screen === "play" && state.mode === "foot") {
-    const { steer, gas } = driveAxis();
-    state.heading += steer * dt * 2.4;
-    const v = gas * (isHeld("run") ? CONFIG.player.run : CONFIG.player.walk);
-    state.speed = Math.abs(v) * 3.2;
-    const nx = state.x + Math.sin(state.heading) * v * dt;
-    const nz = state.z + Math.cos(state.heading) * v * dt;
-    [state.x, state.z] = collide(nx, nz);
-    milo.position.set(state.x, 0, state.z);
-    milo.rotation.y = state.heading;
+  if (state.screen === "play" && !state.staged) {
+    if (state.mode === "foot") {
+      footStep(state, dt, (x, z) => collide(x, z, 0.6));
+      milo.position.set(state.x, 0, state.z);
+      milo.rotation.y = state.heading;
+      const target = nearestParked(parked, state.x, state.z);
+      const res = hotwireTick(state, dt, target);
+      if (res === "done" && target) {
+        const car = takeCar(target);
+        car.parked = target;
+        state.car = car;
+        state.mode = "chase";
+        state.heading = car.heading;
+        state.stats.stolen += 1;
+        if (!state.perks.has("wiring")) state.wanted = Math.min(5, state.wanted + 1);
+        state.toast = `STOLEN — ${car.spec.name} (WANTED ${state.wanted})`;
+        milo.visible = false;
+      }
+    } else if (state.mode === "chase" && state.car) {
+      const car = state.car;
+      if (wasPressed("enter")) {
+        const ref = car.parked;
+        if (ref) { ref.x = car.x; ref.z = car.z; ref.heading = car.heading; ref.stolen = false; }
+        state.car = null;
+        exitCar(state, car);
+        milo.visible = true;
+        milo.position.set(state.x, 0, state.z);
+        state.toast = "ON FOOT — CAR PARKED";
+      } else {
+        const axis = driveAxis();
+        const evs = driveStep(car, axis, dt, {
+          nitroHeld: isHeld("nitro"),
+          perks: state.perks,
+          traffic,
+          chain: chainObj,
+          collide: (x, z, r) => collide(x, z, r),
+        });
+        state.x = car.x; state.z = car.z; state.heading = car.heading;
+        state.speed = Math.abs(car.speed);
+        state.chain = chainObj.value;
+        state.stats.bestChain = Math.max(state.stats.bestChain, state.chain);
+        for (const ev of evs) {
+          if (ev.kind === "nearMiss") {
+            const award = Math.round(ev.pay * state.chain);
+            state.cash += award;
+            state.stats.earned += award;
+            state.stats.nearMiss += 1;
+            state.toast = `NEAR MISS +$${award} — CHAIN x${state.chain.toFixed(1)}`;
+          } else if (ev.kind === "crash") {
+            state.toast = `CRASH — CAR -$${ev.dmg} HP`;
+          } else if (ev.kind === "wrecked") {
+            const ref = car.parked;
+            if (ref) { ref.x = car.x; ref.z = car.z; ref.stolen = false; }
+            state.car = null;
+            state.mode = "foot";
+            state.speed = 0;
+            milo.visible = true;
+            milo.position.set(state.x, 0, state.z);
+            state.toast = "WRECKED — MILO IS ON FOOT";
+          }
+        }
+      }
+    }
+    updateTraffic(traffic, dt, state);
+    updatePedestrians(walkers, dt, state);
+    const pos = state.mode === "chase" && state.car ? state.car : state;
+    updateMission(runner, state, dt, pos);
+    // Mission 8 branch: 1 silent, 2 loud.
+    if (CONFIG.missions[state.missionIndex] && CONFIG.missions[state.missionIndex].id === "m8" && !runner.branch) {
+      if (wasPressed("choice1")) chooseBranch(runner, state, false);
+      else if (wasPressed("choice2")) chooseBranch(runner, state, true);
+    }
+    if (wasPressed("gig") && !runner.gig && state.missionIndex < CONFIG.missions.length) {
+      startGig(runner, state, "parcel");
+    }
+    if (state.screen === "draft") showScreen("draft");
+    if (state.screen === "victory") showScreen("victory");
+  }
+  // Perk draft: 1/2/3 picks a perk. This runs outside the play
+  // block because the draft screen itself is the active screen.
+  if (state.screen === "draft") {
+    let picked = false;
+    if (wasPressed("choice1")) picked = pickPerk(runner, state, 0);
+    else if (wasPressed("choice2")) picked = pickPerk(runner, state, 1);
+    else if (wasPressed("choice3")) picked = pickPerk(runner, state, 2);
+    if (picked) showScreen(state.screen);
   }
   if (wasPressed("pause")) showScreen(state.screen === "pause" ? "play" : "pause");
   if (wasPressed("radio")) state.radio = (state.radio + 1) % CONFIG.radio.length;
@@ -211,14 +332,18 @@ function boot() {
   $("btn-start").addEventListener("click", () => {
     state.x = playerSpawn().x; state.z = playerSpawn().z;
     state.heading = playerSpawn().heading;
-    state.objective = { x: -290, z: -160 };
+    state.missionIndex = 0;
+    startMission(runner, state);
     showScreen("play");
   });
   $("btn-sound").addEventListener("click", (e) => {
     const on = e.target.textContent.includes("ON");
     e.target.textContent = on ? "SOUND: OFF" : "SOUND: ON";
   });
-  for (let i = 0; i < 3; i++) $(`slot-${i}`).textContent = `SAVE ${i + 1} — ${slotLabel(i)}`;
+  for (let i = 0; i < 3; i++) {
+    $(`draft-${i}`).addEventListener("click", () => { if (pickPerk(runner, state, i)) showScreen(state.screen); });
+    $(`slot-${i}`).textContent = `SAVE ${i + 1} — ${slotLabel(i)}`;
+  }
   $("counts").textContent = "4 DISTRICTS — 12 MISSIONS — 6 CARS — 12 PERKS";
   stageShot(shot || "marina");
   view.resize();

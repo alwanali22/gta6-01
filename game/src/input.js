@@ -12,6 +12,8 @@ const KEYMAP = {
   KeyE: "enter", KeyF: "fire", KeyQ: "wheel",
   KeyR: "radio", KeyM: "map", KeyP: "pause",
   Escape: "pause", Space: "nitro", Enter: "confirm",
+  Digit1: "choice1", Digit2: "choice2", Digit3: "choice3",
+  KeyG: "gig",
 };
 
 export function bindInput() {
