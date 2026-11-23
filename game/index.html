@@ -32,7 +32,7 @@
   <div id="hud-top"><span id="hud-wanted">☆☆☆☆☆</span><span id="hud-cash">$500</span><span id="hud-speed">0 km/h</span></div>
   <div id="hud-mission">FREE ROAM — STEAL A CAR</div>
   <div id="hud-bottom">
-    <div><div id="hud-chain">CHAIN x1.0</div><div id="hud-units">UNITS IN PURSUIT: 0</div><div id="hud-heat">HEAT: CLEAR</div><div id="hud-air"></div><div id="hud-district">Marina Row</div></div>
+    <div><div id="hud-chain">CHAIN x1.0</div><div id="hud-units">UNITS IN PURSUIT: 0</div><div id="hud-heat">HEAT: CLEAR</div><div id="hud-air"></div><div id="hud-district">Marina Row</div><div id="hud-nitro"></div><div id="hud-toast"></div></div>
     <canvas id="minimap" width="150" height="150" aria-label="Minimap"></canvas>
   </div>
 </div>
@@ -42,14 +42,14 @@
   <p class="tagline">STEAL THE CAR. OUTRUN THE LAW. OWN THE NIGHT.</p>
   <p class="chain">EVERY NEAR-MISS FEEDS THE CHAIN</p>
   <p class="counts">4 districts · 12 missions · 6 cars · 12 perks · 3 radio stations · 3 save slots</p>
-  <p class="small">Milo Vane, courier. Nadia drives beside you. Captain Rook hunts you. Marcus Voss waits at the end.<br>WASD drive / walk · E hold to hotwire · P pause · Q weapon wheel · R radio · F fire</p>
+  <p class="small">Milo Vane, courier. Nadia drives beside you. Captain Rook hunts you. Marcus Voss waits at the end.<br>WASD drive / walk · E hold to hotwire · Shift nitro · P pause · Q weapon wheel · R radio · F fire</p>
   <p>GOAL: finish 12 jobs, raise $90,000 for grade S. LOSE: WASTED or BUSTED.</p>
   <button onclick="document.getElementById('screen-title').hidden=true;document.getElementById('hud').hidden=false">START — press Space</button>
 </section>
 
 <section class="screen" id="screen-play" hidden><h2>PLAY</h2><p>Steal a car. Follow the banner.</p></section>
 <section class="screen" id="screen-pause" hidden><h2>PAUSED</h2><p>Press P to resume.</p></section>
-<section class="screen" id="screen-draft" hidden><h2>CHOOSE A CREW PERK — PICK 1 OF 3</h2><p>NITRO RIG · ARMOR PLATE · GHOST PLATES</p><p class="small">Nadia: pick one, Milo. The next job starts when you do.</p></section>
+<section class="screen" id="screen-draft" hidden><h2>CHOOSE A CREW PERK — PICK 1 OF 3</h2><p id="draft-options">NITRO RIG · ARMOR PLATE · GHOST PLATES</p><p class="small">Press 1, 2 or 3. Nadia: pick one, Milo. The next job starts when you do.</p></section>
 <section class="screen" id="screen-victory" hidden><h2>VICTORY — GRADE A</h2><p>$76,400 · 12/12 missions · Best chain x5.0</p><p class="small">Cars stolen, cops evaded, near misses and best chain are on the stats screen.</p></section>
 <section class="screen" id="screen-wasted" hidden><h2>WASTED</h2><p>Milo is down. The night goes on without him.</p></section>
 <section class="screen" id="screen-busted" hidden><h2>BUSTED</h2><p>Captain Rook finally caught up. The chain ends here.</p></section>

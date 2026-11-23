@@ -54,6 +54,25 @@ export function createRenderer(canvas, minimap) {
     policeCars.push(pc);
   }
 
+  const trafficCars = [];
+  for (let i = 0; i < 12; i += 1) {
+    const tc = new THREE.Group();
+    const tb = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.65, 4.2), new THREE.MeshLambertMaterial({ color: 0xd8d8d8 }));
+    tb.position.y = 0.55;
+    tc.add(tb);
+    scene.add(tc);
+    trafficCars.push(tc);
+  }
+  const walkerMeshes = [];
+  for (let i = 0; i < 10; i += 1) {
+    const wm = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.8, 0.7), new THREE.MeshLambertMaterial({ color: 0xffc93d }));
+    wm.position.y = 0.9;
+    scene.add(wm);
+    walkerMeshes.push(wm);
+  }
+  const beacon = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 14, 8), new THREE.MeshBasicMaterial({ color: 0xffd23e, transparent: true, opacity: 0.55 }));
+  scene.add(beacon);
+
   function resize() {
     const w = window.innerWidth;
     const h = window.innerHeight;
@@ -93,6 +112,14 @@ export function createRenderer(canvas, minimap) {
       ctx.arc((p.x + 210) * s, (p.z + 210) * s, 3, 0, Math.PI * 2);
       ctx.fill();
     }
+    ctx.fillStyle = '#d8d8d8';
+    for (const t of state.traffic || []) {
+      ctx.fillRect((t.x + 210) * s - 1, (t.z + 210) * s - 1, 3, 3);
+    }
+    if (state.mission && state.mission.target) {
+      ctx.fillStyle = '#ffd23e';
+      ctx.fillRect((state.mission.target[0] + 210) * s - 3, (state.mission.target[1] + 210) * s - 3, 6, 6);
+    }
   }
 
   function draw(state, screen) {
@@ -120,6 +147,27 @@ export function createRenderer(canvas, minimap) {
       pc.position.set(p.x, 0, p.z);
       pc.rotation.y = p.heading || 0;
     });
+    (state.traffic || []).forEach((t, i) => {
+      const tc = trafficCars[i];
+      if (!tc) return;
+      tc.visible = true;
+      tc.position.set(t.x, 0, t.z);
+      tc.rotation.y = t.heading || 0;
+      tc.children[0].material.color.setHex(t.colour || 0xd8d8d8);
+    });
+    (state.walkers || []).forEach((w, i) => {
+      const wm = walkerMeshes[i];
+      if (!wm) return;
+      wm.visible = true;
+      wm.position.set(w.x, 0.9, w.z);
+      wm.material.color.setHex(w.colour || 0xffc93d);
+    });
+    if (state.mission && state.mission.target) {
+      beacon.visible = true;
+      beacon.position.set(state.mission.target[0], 7, state.mission.target[1]);
+    } else {
+      beacon.visible = false;
+    }
     renderer.render(scene, camera);
     drawMinimap(state);
   }

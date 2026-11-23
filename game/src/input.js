@@ -10,6 +10,7 @@ const BACK = new Set(['KeyS', 'ArrowDown']);
 const LEFT = new Set(['KeyA', 'ArrowLeft']);
 const RIGHT = new Set(['KeyD', 'ArrowRight']);
 const HOTWIRE = new Set(['KeyE']);
+const NITRO = new Set(['ShiftLeft', 'ShiftRight']);
 const START = new Set(['Space', 'Enter']);
 const PAUSE = new Set(['KeyP', 'Escape']);
 
@@ -21,7 +22,7 @@ export function createInput(canvas) {
     if (START.has(event.code) && !event.repeat) queued |= ACT_START;
     else if (PAUSE.has(event.code) && !event.repeat) queued |= ACT_PAUSE;
     else if (HOTWIRE.has(event.code) && !event.repeat) queued |= ACT_HOTWIRE;
-    if (FORWARD.has(event.code) || BACK.has(event.code) || LEFT.has(event.code) || RIGHT.has(event.code) || HOTWIRE.has(event.code)) {
+    if (FORWARD.has(event.code) || BACK.has(event.code) || LEFT.has(event.code) || RIGHT.has(event.code) || HOTWIRE.has(event.code) || NITRO.has(event.code)) {
       held.add(event.code);
       event.preventDefault();
     }
@@ -40,6 +41,7 @@ export function createInput(canvas) {
     back() { return has(BACK) ? 1 : 0; },
     steer() { return (has(RIGHT) ? 1 : 0) - (has(LEFT) ? 1 : 0); },
     hotwireHeld() { return has(HOTWIRE); },
+    nitroHeld() { return has(NITRO); },
     take() { const t = queued; queued = 0; return t; },
   };
 }
